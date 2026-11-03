@@ -1,0 +1,15 @@
+# Container and production settings. Every value must come from the environment.
+spring:
+  datasource:
+    url: ${DOCCHAT_DB_URL}
+    username: ${DOCCHAT_DB_USERNAME}
+    password: ${DOCCHAT_DB_PASSWORD}
+
+server:
+  # The API runs behind nginx, which forwards the original host and protocol.
+  forward-headers-strategy: native
+
+logging:
+  structured:
+    format:
+      console: ecs

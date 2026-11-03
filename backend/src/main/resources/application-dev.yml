@@ -1,0 +1,9 @@
+# Local development: the backend runs on the host and the database runs in Docker Compose.
+# Values come from the .env file in the repository root (copy it from .env.example).
+spring:
+  config:
+    import: optional:file:../.env[.properties]
+  datasource:
+    url: jdbc:postgresql://localhost:${POSTGRES_PORT:5432}/${POSTGRES_DB:docchat}
+    username: ${POSTGRES_USER:docchat}
+    password: ${POSTGRES_PASSWORD}

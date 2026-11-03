@@ -1,0 +1,26 @@
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+
+# User data
+storage/
+uploads/
+*.pdf
+!**/src/test/resources/**/*.pdf
+
+# Build output
+target/
+dist/
+.angular/
+node_modules/
+
+# Logs
+*.log
+
+# Editors and operating systems
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db

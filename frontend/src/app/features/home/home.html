@@ -1,0 +1,41 @@
+<section class="intro">
+  <h1>Ask questions about your documents</h1>
+  <p>
+    DocChat AI is being built to answer questions about your PDF files and show the pages each
+    answer came from.
+  </p>
+  <p class="notice">
+    This is the project foundation. Accounts, document upload and chat are not available yet.
+  </p>
+</section>
+
+<section class="status" aria-labelledby="status-title" aria-live="polite">
+  <h2 id="status-title">System status</h2>
+
+  @let current = view();
+  @if (current.state === 'loading') {
+    <p data-testid="status-loading">Checking the backend...</p>
+  } @else if (current.state === 'unreachable') {
+    <p class="message message-error" data-testid="status-unreachable">
+      The backend could not be reached. Check that it is running, then try again.
+    </p>
+    <button type="button" (click)="refresh()">Try again</button>
+  } @else {
+    <dl class="rows">
+      @for (row of current.rows; track row.label) {
+        <div class="row" data-testid="status-row">
+          <dt>{{ row.label }}</dt>
+          <dd [class]="'badge badge-' + row.status.toLowerCase()">
+            {{ statusLabels[row.status] }}
+          </dd>
+        </div>
+      }
+    </dl>
+    @if (!current.healthy) {
+      <p class="message message-error" data-testid="status-degraded">
+        The backend is running, but a dependency it needs is not available.
+      </p>
+    }
+    <button type="button" class="secondary" (click)="refresh()">Check again</button>
+  }
+</section>
