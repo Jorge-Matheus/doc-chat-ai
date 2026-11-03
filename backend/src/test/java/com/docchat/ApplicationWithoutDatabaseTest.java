@@ -1,6 +1,7 @@
 package com.docchat;
 
 import static org.hamcrest.Matchers.containsString;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -33,7 +34,7 @@ class ApplicationWithoutDatabaseTest {
     private MockMvc mockMvc;
 
     @Test
-    void statusEndpointReportsTheOutage() throws Exception {
+    void statusEndpointIsPublicAndReportsTheOutage() throws Exception {
         mockMvc.perform(get("/api/system/status"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("DOWN"))
@@ -61,9 +62,10 @@ class ApplicationWithoutDatabaseTest {
     }
 
     @Test
-    void sensitiveActuatorEndpointsAreNotExposed() throws Exception {
-        mockMvc.perform(get("/actuator/env")).andExpect(status().isNotFound());
-        mockMvc.perform(get("/actuator/beans")).andExpect(status().isNotFound());
+    void sensitiveActuatorEndpointsAreNotExposedEvenToSignedInUsers() throws Exception {
+        mockMvc.perform(get("/actuator/env")).andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/actuator/env").with(user("someone"))).andExpect(status().isNotFound());
+        mockMvc.perform(get("/actuator/beans").with(user("someone"))).andExpect(status().isNotFound());
     }
 
     @Test
@@ -72,18 +74,31 @@ class ApplicationWithoutDatabaseTest {
                 .andExpect(status().isOk())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath("$.info.title").value("DocChat AI API"))
-                .andExpect(jsonPath("$.paths['/api/system/status'].get").exists());
+                .andExpect(jsonPath("$.paths['/api/system/status'].get").exists())
+                .andExpect(jsonPath("$.paths['/api/auth/register'].post").exists())
+                .andExpect(jsonPath("$.paths['/api/auth/login'].post").exists())
+                .andExpect(jsonPath("$.paths['/api/documents'].post").exists());
         mockMvc.perform(get("/swagger-ui/index.html"))
                 .andExpect(status().isOk())
                 .andExpect(content().string(containsString("swagger")));
     }
 
     @Test
-    void unknownRoutesUseTheStandardErrorFormat() throws Exception {
+    void protectedRoutesRejectAnonymousRequestsInTheStandardFormat() throws Exception {
         mockMvc.perform(get("/api/does-not-exist"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.code").value("UNAUTHORIZED"))
+                .andExpect(jsonPath("$.correlationId").isNotEmpty());
+    }
+
+    @Test
+    void unknownRoutesUseTheStandardErrorFormat() throws Exception {
+        mockMvc.perform(get("/api/does-not-exist").with(user("someone")))
                 .andExpect(status().isNotFound())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
                 .andExpect(jsonPath("$.code").value("NOT_FOUND"))
+                .andExpect(jsonPath("$.detail").value("The requested resource was not found."))
                 .andExpect(jsonPath("$.correlationId").isNotEmpty());
     }
 }

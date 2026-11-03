@@ -27,6 +27,9 @@ services:
       DOCCHAT_DB_URL: jdbc:postgresql://db:5432/${POSTGRES_DB:-docchat}
       DOCCHAT_DB_USERNAME: ${POSTGRES_USER:-docchat}
       DOCCHAT_DB_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in the .env file}
+      DOCCHAT_STORAGE_DIR: /var/lib/docchat/storage
+    volumes:
+      - document-files:/var/lib/docchat/storage
     ports:
       - "127.0.0.1:${BACKEND_PORT:-8080}:8080"
     depends_on:
@@ -49,3 +52,4 @@ services:
 
 volumes:
   db-data:
+  document-files:

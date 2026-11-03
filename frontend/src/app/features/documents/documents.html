@@ -1,0 +1,78 @@
+<div class="heading">
+  <h1>Your documents</h1>
+  <button matButton="filled" type="button" [disabled]="uploading()" (click)="fileInput.click()">
+    {{ uploading() ? 'Uploading...' : 'Upload PDF' }}
+  </button>
+  <input
+    #fileInput
+    class="file-input"
+    type="file"
+    accept="application/pdf,.pdf"
+    aria-label="Choose a PDF file"
+    data-testid="file-input"
+    (change)="onFileSelected($event)"
+  />
+</div>
+<p class="limits">PDF files with selectable text, up to {{ maxFileSizeLabel }}.</p>
+
+@if (uploading()) {
+  <mat-progress-bar mode="indeterminate" aria-label="Uploading the file" />
+}
+@if (actionError(); as message) {
+  <p class="message-error" role="alert" data-testid="action-error">{{ message }}</p>
+}
+
+<section aria-live="polite">
+  @if (loadFailed()) {
+    <p class="message-error" data-testid="load-error">Your documents could not be loaded.</p>
+    <button matButton="outlined" type="button" (click)="load()">Try again</button>
+  } @else if (loading()) {
+    <p data-testid="loading">Loading your documents...</p>
+  } @else if (documents().length === 0) {
+    <p class="empty" data-testid="empty">You have no documents yet. Upload a PDF to get started.</p>
+  }
+
+  @if (documents().length > 0) {
+    <ul class="documents">
+      @for (document of documents(); track document.id) {
+        <li class="document" data-testid="document">
+          <div class="details">
+            <span class="filename">{{ document.filename }}</span>
+            <span class="facts">
+              {{ formatSize(document.sizeBytes) }}
+              @if (document.pageCount !== null) {
+                · {{ document.pageCount }} {{ document.pageCount === 1 ? 'page' : 'pages' }}
+              }
+              · {{ document.createdAt | date: 'mediumDate' }}
+            </span>
+            @if (failureMessage(document); as failure) {
+              <span class="message-error" data-testid="document-failure">{{ failure }}</span>
+            }
+          </div>
+          <span class="badge" [class]="'badge badge-' + document.status.toLowerCase()">
+            {{ statusLabels[document.status] }}
+          </span>
+          <button
+            matButton
+            type="button"
+            [attr.aria-label]="'Delete ' + document.filename"
+            (click)="confirmDelete(document)"
+          >
+            Delete
+          </button>
+        </li>
+      }
+    </ul>
+  }
+
+  @if (totalItems() > pageSize) {
+    <mat-paginator
+      [length]="totalItems()"
+      [pageIndex]="pageIndex()"
+      [pageSize]="pageSize"
+      [hidePageSize]="true"
+      aria-label="Choose a page of documents"
+      (page)="onPage($event)"
+    />
+  }
+</section>

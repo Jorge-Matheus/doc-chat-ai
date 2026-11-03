@@ -12,12 +12,30 @@ spring:
       query-timeout: 5s
   lifecycle:
     timeout-per-shutdown-phase: 20s
+  servlet:
+    multipart:
+      # Keep in sync with client_max_body_size in frontend/nginx.conf and MAX_FILE_SIZE_BYTES in
+      # the frontend's document model. The request limit leaves room for the multipart overhead.
+      max-file-size: 25MB
+      max-request-size: 26MB
+  session:
+    jdbc:
+      # The tables are created by a Flyway migration.
+      initialize-schema: never
 
 server:
   shutdown: graceful
   error:
     include-stacktrace: never
     include-message: never
+  servlet:
+    session:
+      cookie:
+        http-only: true
+        same-site: lax
+  tomcat:
+    # Reads an oversized upload to its end, so the client receives the 413 instead of a reset.
+    max-swallow-size: 30MB
 
 management:
   endpoints:
@@ -30,8 +48,20 @@ management:
         enabled: true
       group:
         readiness:
-          include: readinessState,db,pgvector
+          include: readinessState,db,pgvector,storage
+
+springdoc:
+  show-login-endpoint: true
 
 logging:
   pattern:
     correlation: "[%X{correlationId:-}] "
+
+docchat:
+  storage:
+    # A relative path is resolved against the working directory.
+    directory: ${DOCCHAT_STORAGE_DIR:storage}
+  ingestion:
+    workers: 2
+    queue-capacity: 100
+    max-pages: 2000

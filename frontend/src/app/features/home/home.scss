@@ -82,24 +82,3 @@
 .message-error {
   color: #991b1b;
 }
-
-button {
-  padding: 0.5rem 1rem;
-  border: 1px solid var(--color-accent);
-  border-radius: 0.5rem;
-  background: var(--color-accent);
-  color: #fff;
-  font: inherit;
-  font-weight: 600;
-  cursor: pointer;
-
-  &.secondary {
-    background: transparent;
-    color: var(--color-accent);
-  }
-
-  &:focus-visible {
-    outline: 2px solid var(--color-accent);
-    outline-offset: 2px;
-  }
-}

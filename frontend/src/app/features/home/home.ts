@@ -1,5 +1,6 @@
 import { ChangeDetectionStrategy, Component, DestroyRef, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { MatButtonModule } from '@angular/material/button';
 import { ComponentStatus, SystemStatus } from '../../core/system/system-status.model';
 import { SystemStatusService } from '../../core/system/system-status.service';
 
@@ -15,6 +16,7 @@ interface StatusRow {
 
 @Component({
   selector: 'app-home',
+  imports: [MatButtonModule],
   templateUrl: './home.html',
   styleUrl: './home.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,

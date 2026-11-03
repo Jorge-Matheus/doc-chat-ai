@@ -1,0 +1,4 @@
+# Tests run with no active profile, so Spring Boot applies this file on top of application.yml.
+docchat:
+  storage:
+    directory: target/test-storage

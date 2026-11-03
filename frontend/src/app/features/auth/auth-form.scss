@@ -1,0 +1,30 @@
+:host {
+  display: block;
+  max-width: 26rem;
+  margin: 0 auto;
+}
+
+h1 {
+  margin: 0 0 1.5rem;
+  font-size: 1.75rem;
+  line-height: 1.2;
+}
+
+form {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.form-error {
+  margin: 0 0 0.5rem;
+  color: #991b1b;
+}
+
+.alternative {
+  margin: 1.5rem 0 0;
+  color: var(--color-text-muted);
+}
+
+a {
+  color: var(--color-accent);
+}

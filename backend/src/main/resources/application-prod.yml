@@ -1,4 +1,4 @@
-# Container and production settings. Every value must come from the environment.
+# Settings for running in the Compose containers. Every value must come from the environment.
 spring:
   datasource:
     url: ${DOCCHAT_DB_URL}
@@ -12,4 +12,5 @@ server:
 logging:
   structured:
     format:
+      # JSON logs in the Elastic Common Schema.
       console: ecs

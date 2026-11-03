@@ -5,7 +5,7 @@
     answer came from.
   </p>
   <p class="notice">
-    This is the project foundation. Accounts, document upload and chat are not available yet.
+    You can already create an account and upload PDF files. Asking questions is not available yet.
   </p>
 </section>
 
@@ -19,7 +19,7 @@
     <p class="message message-error" data-testid="status-unreachable">
       The backend could not be reached. Check that it is running, then try again.
     </p>
-    <button type="button" (click)="refresh()">Try again</button>
+    <button matButton="filled" type="button" (click)="refresh()">Try again</button>
   } @else {
     <dl class="rows">
       @for (row of current.rows; track row.label) {
@@ -36,6 +36,6 @@
         The backend is running, but a dependency it needs is not available.
       </p>
     }
-    <button type="button" class="secondary" (click)="refresh()">Check again</button>
+    <button matButton="outlined" type="button" (click)="refresh()">Check again</button>
   }
 </section>
