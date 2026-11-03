@@ -20,6 +20,39 @@ services:
       retries: 20
       start_period: 10s
 
+  ollama:
+    image: ollama/ollama:0.40.14
+    # Needs an NVIDIA GPU that Docker can reach. See docs/adr/0007.
+    gpus: all
+    ports:
+      - "127.0.0.1:${OLLAMA_PORT:-11434}:11434"
+    volumes:
+      - ollama-models:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 5s
+
+  # Downloads the models on the first run, which takes a while. Later runs find them in the volume.
+  ollama-models:
+    image: ollama/ollama:0.40.14
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+      CHAT_MODEL: ${OLLAMA_CHAT_MODEL:-qwen3.5:9b}
+      EMBEDDING_MODEL: ${OLLAMA_EMBEDDING_MODEL:-bge-m3}
+    entrypoint:
+      - sh
+      - -c
+      - |
+        for model in "$$CHAT_MODEL" "$$EMBEDDING_MODEL"; do
+          ollama show "$$model" > /dev/null 2>&1 || ollama pull "$$model" || exit 1
+        done
+    depends_on:
+      ollama:
+        condition: service_healthy
+
   backend:
     build: ./backend
     environment:
@@ -28,6 +61,9 @@ services:
       DOCCHAT_DB_USERNAME: ${POSTGRES_USER:-docchat}
       DOCCHAT_DB_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in the .env file}
       DOCCHAT_STORAGE_DIR: /var/lib/docchat/storage
+      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_CHAT_MODEL: ${OLLAMA_CHAT_MODEL:-qwen3.5:9b}
+      OLLAMA_EMBEDDING_MODEL: ${OLLAMA_EMBEDDING_MODEL:-bge-m3}
     volumes:
       - document-files:/var/lib/docchat/storage
     ports:
@@ -35,6 +71,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      ollama-models:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8080/actuator/health/readiness"]
       interval: 10s
@@ -53,3 +91,4 @@ services:
 volumes:
   db-data:
   document-files:
+  ollama-models:

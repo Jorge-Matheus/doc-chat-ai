@@ -1,7 +1,9 @@
 package com.docchat.document;
 
+import com.docchat.common.db.PgVectors;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
+import java.sql.Types;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -19,6 +21,7 @@ public class DocumentRepository {
 
     private static final String COLUMNS =
             "id, owner_id, filename, size_bytes, status, failure_reason, page_count, created_at";
+    private static final int CHUNK_INSERT_BATCH_SIZE = 200;
 
     private static final RowMapper<Document> ROW_MAPPER = (row, rowNumber) -> {
         String failureReason = row.getString("failure_reason");
@@ -116,7 +119,7 @@ public class DocumentRepository {
      * It does nothing if the document was deleted during processing.
      */
     @Transactional
-    public void completeProcessing(UUID id, List<String> pages) {
+    public void completeProcessing(UUID id, List<String> pages, List<EmbeddedChunk> chunks) {
         int updated = jdbcClient
                 .sql("""
                         UPDATE documents SET status = 'READY', page_count = :pageCount
@@ -142,6 +145,20 @@ public class DocumentRepository {
                     public int getBatchSize() {
                         return pages.size();
                     }
+                });
+        jdbcTemplate.batchUpdate(
+                """
+                INSERT INTO document_chunks (document_id, page_number, chunk_index, content, embedding)
+                VALUES (?, ?, ?, ?, CAST(? AS vector))
+                """,
+                chunks,
+                CHUNK_INSERT_BATCH_SIZE,
+                (statement, chunk) -> {
+                    statement.setObject(1, id);
+                    statement.setInt(2, chunk.pageNumber());
+                    statement.setInt(3, chunk.chunkIndex());
+                    statement.setString(4, chunk.content());
+                    statement.setObject(5, PgVectors.toLiteral(chunk.embedding()), Types.OTHER);
                 });
     }
 

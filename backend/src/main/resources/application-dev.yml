@@ -1,4 +1,4 @@
-# Local development: the backend runs on the host and the database runs in Docker Compose.
+# Local development: the backend runs on the host, and the database and Ollama run in Docker Compose.
 # Values come from the .env file in the repository root (copy it from .env.example).
 spring:
   config:
@@ -7,3 +7,6 @@ spring:
     url: jdbc:postgresql://localhost:${POSTGRES_PORT:5432}/${POSTGRES_DB:docchat}
     username: ${POSTGRES_USER:docchat}
     password: ${POSTGRES_PASSWORD}
+  ai:
+    ollama:
+      base-url: http://localhost:${OLLAMA_PORT:11434}

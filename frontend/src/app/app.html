@@ -3,6 +3,7 @@
     <a class="brand" routerLink="/">DocChat AI</a>
     <span class="spacer"></span>
     @if (auth.user(); as user) {
+      <a matButton routerLink="/ask">Ask</a>
       <a matButton routerLink="/documents">Documents</a>
       <span class="user-email" data-testid="user-email">{{ user.email }}</span>
       <button matButton type="button" (click)="signOut()">Sign out</button>

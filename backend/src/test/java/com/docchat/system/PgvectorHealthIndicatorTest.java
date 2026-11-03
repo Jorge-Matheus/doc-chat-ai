@@ -14,21 +14,21 @@ class PgvectorHealthIndicatorTest {
 
     @Test
     void isUpWhenTheExtensionIsAvailable() {
-        when(service.currentStatus()).thenReturn(SystemStatus.of(ComponentStatus.UP, ComponentStatus.UP));
+        when(service.vectorExtensionStatus()).thenReturn(ComponentStatus.UP);
 
         assertThat(indicator.health().getStatus()).isEqualTo(Status.UP);
     }
 
     @Test
     void isDownWhenTheExtensionIsMissing() {
-        when(service.currentStatus()).thenReturn(SystemStatus.of(ComponentStatus.UP, ComponentStatus.DOWN));
+        when(service.vectorExtensionStatus()).thenReturn(ComponentStatus.DOWN);
 
         assertThat(indicator.health().getStatus()).isEqualTo(Status.DOWN);
     }
 
     @Test
     void isDownWhenTheExtensionCannotBeChecked() {
-        when(service.currentStatus()).thenReturn(SystemStatus.of(ComponentStatus.DOWN, ComponentStatus.UNKNOWN));
+        when(service.vectorExtensionStatus()).thenReturn(ComponentStatus.UNKNOWN);
 
         assertThat(indicator.health().getStatus()).isEqualTo(Status.DOWN);
     }

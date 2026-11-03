@@ -25,18 +25,21 @@ class SystemStatusControllerTest {
 
     @Test
     void returnsTheContractUsedByTheFrontend() throws Exception {
-        when(service.currentStatus()).thenReturn(SystemStatus.of(ComponentStatus.UP, ComponentStatus.UP));
+        when(service.currentStatus())
+                .thenReturn(SystemStatus.of(ComponentStatus.UP, ComponentStatus.UP, ComponentStatus.UP));
 
         mockMvc.perform(get("/api/system/status"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("UP"))
                 .andExpect(jsonPath("$.database").value("UP"))
-                .andExpect(jsonPath("$.vectorExtension").value("UP"));
+                .andExpect(jsonPath("$.vectorExtension").value("UP"))
+                .andExpect(jsonPath("$.ai").value("UP"));
     }
 
     @Test
     void reportsAFailedDependencyInTheBodyWithStatus200() throws Exception {
-        when(service.currentStatus()).thenReturn(SystemStatus.of(ComponentStatus.DOWN, ComponentStatus.UNKNOWN));
+        when(service.currentStatus())
+                .thenReturn(SystemStatus.of(ComponentStatus.DOWN, ComponentStatus.UNKNOWN, ComponentStatus.UP));
 
         mockMvc.perform(get("/api/system/status"))
                 .andExpect(status().isOk())

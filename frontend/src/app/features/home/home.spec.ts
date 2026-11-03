@@ -46,23 +46,23 @@ describe('Home', () => {
     expect(testId('status-loading')).not.toBeNull();
     expect(rows()).toEqual([]);
 
-    await respondWith({ status: 'UP', database: 'UP', vectorExtension: 'UP' });
+    await respondWith({ status: 'UP', database: 'UP', vectorExtension: 'UP', ai: 'UP' });
 
     expect(testId('status-loading')).toBeNull();
   });
 
   it('shows every component as up when the system is healthy', async () => {
-    await respondWith({ status: 'UP', database: 'UP', vectorExtension: 'UP' });
+    await respondWith({ status: 'UP', database: 'UP', vectorExtension: 'UP', ai: 'UP' });
 
-    expect(rows()).toEqual(['Backend Up', 'Database Up', 'pgvector extension Up']);
+    expect(rows()).toEqual(['Backend Up', 'Database Up', 'pgvector extension Up', 'AI models Up']);
     expect(testId('status-degraded')).toBeNull();
     expect(testId('status-unreachable')).toBeNull();
   });
 
   it('reports the real state when the database is down', async () => {
-    await respondWith({ status: 'DOWN', database: 'DOWN', vectorExtension: 'UNKNOWN' });
+    await respondWith({ status: 'DOWN', database: 'DOWN', vectorExtension: 'UNKNOWN', ai: 'UP' });
 
-    expect(rows()).toEqual(['Backend Up', 'Database Down', 'pgvector extension Unknown']);
+    expect(rows()).toEqual(['Backend Up', 'Database Down', 'pgvector extension Unknown', 'AI models Up']);
     expect(testId('status-degraded')).not.toBeNull();
   });
 
@@ -80,9 +80,9 @@ describe('Home', () => {
     await fixture.whenStable();
     expect(testId('status-loading')).not.toBeNull();
 
-    await respondWith({ status: 'UP', database: 'UP', vectorExtension: 'UP' });
+    await respondWith({ status: 'UP', database: 'UP', vectorExtension: 'UP', ai: 'UP' });
 
     expect(testId('status-unreachable')).toBeNull();
-    expect(rows()).toHaveLength(3);
+    expect(rows()).toHaveLength(4);
   });
 });

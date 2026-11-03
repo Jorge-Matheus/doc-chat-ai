@@ -5,4 +5,5 @@ export interface SystemStatus {
   readonly status: ComponentStatus;
   readonly database: ComponentStatus;
   readonly vectorExtension: ComponentStatus;
+  readonly ai: ComponentStatus;
 }

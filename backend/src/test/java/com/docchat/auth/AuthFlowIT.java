@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.docchat.TestcontainersConfiguration;
 import com.docchat.testsupport.ApiClient;
+import com.docchat.testsupport.FakeAiConfiguration;
 import com.jayway.jsonpath.JsonPath;
 import java.net.HttpCookie;
 import java.net.http.HttpResponse;
@@ -20,7 +21,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 
 /** Runs the real filter chain over real HTTP against PostgreSQL, as the browser does. Requires Docker. */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@Import(TestcontainersConfiguration.class)
+@Import({TestcontainersConfiguration.class, FakeAiConfiguration.class})
 class AuthFlowIT {
 
     private static final String PASSWORD = "correct horse battery";

@@ -19,7 +19,8 @@ class PgvectorHealthIndicator implements HealthIndicator {
 
     @Override
     public Health health() {
-        ComponentStatus vectorExtension = systemStatusService.currentStatus().vectorExtension();
-        return vectorExtension == ComponentStatus.UP ? Health.up().build() : Health.down().build();
+        return systemStatusService.vectorExtensionStatus() == ComponentStatus.UP
+                ? Health.up().build()
+                : Health.down().build();
     }
 }

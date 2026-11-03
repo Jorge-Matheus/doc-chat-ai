@@ -11,5 +11,7 @@ public enum DocumentFailureReason {
     TOO_MANY_PAGES,
     /** The processing queue was full. */
     PROCESSING_UNAVAILABLE,
+    /** The embedding model could not be reached. */
+    EMBEDDING_UNAVAILABLE,
     INTERNAL_ERROR
 }

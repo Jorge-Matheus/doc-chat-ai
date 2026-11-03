@@ -1,0 +1,79 @@
+<h1>Ask your documents</h1>
+
+@if (documentsLoadFailed()) {
+  <p class="message-error" role="alert" data-testid="documents-error">
+    Your documents could not be loaded. Reload the page to try again.
+  </p>
+} @else if (loadingDocuments()) {
+  <p data-testid="loading">Loading your documents...</p>
+} @else if (readyDocuments().length === 0) {
+  <p class="empty" data-testid="no-documents">
+    You have no documents ready yet. <a routerLink="/documents">Upload a PDF</a> to start asking.
+  </p>
+} @else {
+  <form [formGroup]="form" (ngSubmit)="submit()" novalidate>
+    <mat-form-field appearance="outline">
+      <mat-label>Search in</mat-label>
+      <mat-select formControlName="documentId" data-testid="scope">
+        <mat-option value="">All documents</mat-option>
+        @for (document of readyDocuments(); track document.id) {
+          <mat-option [value]="document.id">{{ document.filename }}</mat-option>
+        }
+      </mat-select>
+    </mat-form-field>
+
+    <mat-form-field appearance="outline">
+      <mat-label>Your question</mat-label>
+      <textarea
+        matInput
+        rows="3"
+        formControlName="question"
+        [attr.maxlength]="maxQuestionLength"
+        data-testid="question"
+      ></textarea>
+      <mat-error>Write your question first.</mat-error>
+    </mat-form-field>
+
+    <button matButton="filled" type="submit" [disabled]="asking()">
+      {{ asking() ? 'Reading your documents...' : 'Ask' }}
+    </button>
+  </form>
+}
+
+<section class="result" aria-live="polite">
+  @if (asking()) {
+    <mat-progress-bar mode="indeterminate" aria-label="Preparing the answer" />
+    <p class="hint">
+      This runs on your computer. Answers usually take seconds, but the first one after a while can
+      take a minute or two.
+    </p>
+  }
+
+  @if (error(); as message) {
+    <p class="message-error" role="alert" data-testid="ask-error">{{ message }}</p>
+  }
+
+  @if (answer(); as current) {
+    @if (current.answered) {
+      <article class="answer" data-testid="answer">{{ current.text }}</article>
+
+      <h2>Sources</h2>
+      <ol class="citations">
+        @for (citation of current.citations; track citation.number) {
+          <li class="citation" data-testid="citation">
+            <div class="citation-title">
+              <span class="citation-number">[{{ citation.number }}]</span>
+              <span class="filename">{{ citation.filename }}</span>
+              <span class="page">page {{ citation.pageNumber }}</span>
+            </div>
+            <blockquote>{{ citation.excerpt }}</blockquote>
+          </li>
+        }
+      </ol>
+    } @else {
+      <p class="not-found" data-testid="not-found">
+        The answer to this question was not found in your documents.
+      </p>
+    }
+  }
+</section>

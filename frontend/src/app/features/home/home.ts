@@ -57,6 +57,7 @@ function toReachableView(status: SystemStatus): StatusView {
       { label: 'Backend', status: 'UP' },
       { label: 'Database', status: status.database },
       { label: 'pgvector extension', status: status.vectorExtension },
+      { label: 'AI models', status: status.ai },
     ],
   };
 }

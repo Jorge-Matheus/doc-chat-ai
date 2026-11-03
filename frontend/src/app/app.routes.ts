@@ -26,5 +26,11 @@ export const routes: Routes = [
     canActivate: [authGuard],
     loadComponent: () => import('./features/documents/documents').then((m) => m.Documents),
   },
+  {
+    path: 'ask',
+    title: 'Ask - DocChat AI',
+    canActivate: [authGuard],
+    loadComponent: () => import('./features/ask/ask').then((m) => m.Ask),
+  },
   { path: '**', redirectTo: '' },
 ];

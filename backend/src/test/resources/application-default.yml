@@ -1,4 +1,11 @@
 # Tests run with no active profile, so Spring Boot applies this file on top of application.yml.
+spring:
+  ai:
+    ollama:
+      # Tests must never reach a real model, even when one is running on this machine.
+      base-url: http://127.0.0.1:1
+    retry:
+      max-attempts: 1
 docchat:
   storage:
     directory: target/test-storage

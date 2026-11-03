@@ -36,18 +36,19 @@ Whole stack, from the repository root. Compose refuses to start until `POSTGRES_
 ```bash
 cp .env.example .env
 docker compose up --build    # Everything, at http://localhost:4200
-docker compose up -d db      # Only the database, for local development
-docker compose down -v       # Stops everything and DELETES the database and the uploaded files
+docker compose up -d db ollama ollama-models   # Only what local development needs
+docker compose down          # Stops everything and keeps the data
+docker compose down -v       # Also DELETES the database, the uploaded files and the ~8 GB of models
 ```
 
 ## Architecture
 
-**Modular monolith.** One Spring Boot application, packaged by business module under `com.docchat.<module>` ([ADR 0001](docs/adr/0001-modular-monolith.md)). Nothing enforces the boundaries except discipline. A package is created only when it has real code, so do not scaffold the planned modules (`rag`, `chat`, `ai`) ahead of their phase. The Spring AI BOM is imported, but its starters are deliberately not added until Phase 3 ([ADR 0002](docs/adr/0002-spring-boot-4-and-spring-ai-2.md)). Persistence uses `JdbcClient` with explicit SQL, not JPA.
+**Modular monolith.** One Spring Boot application, packaged by business module under `com.docchat.<module>` ([ADR 0001](docs/adr/0001-modular-monolith.md)). Nothing enforces the boundaries except discipline. A package is created only when it has real code, so do not scaffold the planned `chat` module ahead of its phase. Persistence uses `JdbcClient` with explicit SQL, not JPA.
 
 **Single origin.** The browser only talks to the Angular host, so the backend has no CORS configuration and frontend code calls relative URLs such as `/api/system/status`. `/api`, `/v3/api-docs` and `/swagger-ui` are forwarded by `proxy.conf.json` under `ng serve` and by `nginx.conf` in Docker. `/actuator` is not forwarded, so reach it on the backend port. `nginx.conf` deliberately sets `proxy_pass` through a variable, which makes nginx re-resolve the name and keeps the proxy working when the backend container is recreated with a new IP. Do not simplify it to a literal URL.
 
 **Spring profiles.** `application.yml` has no datasource on purpose, so starting without a profile fails instead of connecting to an unintended database.
-- `dev`: backend on the host, database in Compose. It reads `../.env` relative to the working directory, so start the backend from `backend/`.
+- `dev`: backend on the host, database and Ollama in Compose. It reads `../.env` relative to the working directory, so start the backend from `backend/`.
 - `prod`: every value comes from the `DOCCHAT_DB_*` variables, and logs are structured JSON. Compose uses this profile.
 
 **Authentication.** Server-side sessions in PostgreSQL behind an HttpOnly cookie ([ADR 0004](docs/adr/0004-server-side-sessions.md)), configured in `SecurityConfig`. Login and logout are Spring Security filters, not controller methods, and login takes a form post. Controllers get the user through `@AuthenticationPrincipal AccountPrincipal`. Every route is authenticated unless `SecurityConfig` lists it. Angular's HttpClient sends the CSRF token by itself from the `XSRF-TOKEN` cookie, which any backend response sets, and `AuthService` refreshes after sign-out because sign-out removes that cookie.
@@ -56,9 +57,11 @@ docker compose down -v       # Stops everything and DELETES the database and the
 
 **Documents.** `DocumentService` stores the file, inserts a `PROCESSING` row and publishes `DocumentUploadedEvent`. `ingestion.DocumentProcessor` listens for it, so `document` does not depend on `ingestion`, and extracts the text on a bounded executor. `DocumentRepository.completeProcessing` updates the row before inserting pages, because that lock is what makes a concurrent delete safe. Rows still `PROCESSING` at startup are processed again. Every user-facing query filters by owner, and another user's document answers 404. Files are on the local disk ([ADR 0005](docs/adr/0005-local-file-storage.md)), with no abstraction over the storage on purpose.
 
-**Status versus health.** `GET /api/system/status` always answers 200 with the real state in its body, and the UI displays it. `/actuator/health/readiness` answers 503 when the database, pgvector or the storage is down. Liveness does not depend on them. A new hard dependency must be added to the readiness group in `application.yml`, because a health indicator alone does not affect readiness.
+**RAG.** Local models through Ollama in Compose ([ADR 0007](docs/adr/0007-local-ai-with-ollama.md)). Spring AI is only the client: the `ai` module wraps `EmbeddingModel` and `ChatModel` and turns failures into `AiUnavailableException`. Its pgvector store is deliberately not used, because `document_chunks` keeps foreign keys to pages and documents, and `rag.ChunkSearchRepository` searches with SQL that always filters by owner. Passages never cross a page. `rag.AnswerService` sends numbered passages to the model, which never sees file names or page numbers, and `AnswerParser` keeps only citations of passages it was given. A reply with no valid citation counts as not found, so every answer shown traces back to a page. The wording in `AnswerPrompt` was chosen by testing variants against the real model, and small changes had surprising effects, so re-test with real models before changing it.
 
-**Database.** Schema changes go through Flyway migrations in `backend/src/main/resources/db/migration`. Relational data, sessions and embeddings share one PostgreSQL database ([ADR 0003](docs/adr/0003-pgvector-for-vector-storage.md)). The vector dimension depends on the embedding model and is defined in Phase 3. The text in `document_pages` must not contain NUL characters or unpaired surrogates, which `PdfTextExtractor.clean` removes.
+**Status versus health.** `GET /api/system/status` always answers 200 with the real state in its body, and the UI displays it. `/actuator/health/readiness` answers 503 when the database, pgvector or the storage is down, and deliberately ignores the AI service, because accounts and documents work without it. Liveness does not depend on any of them. A new hard dependency must be added to the readiness group in `application.yml`, because a health indicator alone does not affect readiness.
+
+**Database.** Schema changes go through Flyway migrations in `backend/src/main/resources/db/migration`. Relational data, sessions and embeddings share one PostgreSQL database ([ADR 0003](docs/adr/0003-pgvector-for-vector-storage.md)). The vector column has dimension 1024 for `bge-m3`, so an embedding model of another dimension needs a new migration and reprocessing. The text in `document_pages` must not contain NUL characters or unpaired surrogates, which `PdfTextExtractor.clean` removes.
 
 **Spring Boot 4.** The project uses modular starters, including one test starter per technology, and new package names such as `org.springframework.boot.health.contributor` and `org.springframework.boot.webmvc.test.autoconfigure`. It also uses Jackson 3 and Spring Security 7. Code from older tutorials usually needs adapting.
 
@@ -68,7 +71,8 @@ docker compose down -v       # Stops everything and DELETES the database and the
 
 - Surefire runs `*Test` classes and Failsafe runs `*IT` classes, so anything that needs Docker must be named `*IT`.
 - Tests run with no Spring profile, so a `@SpringBootTest` must bring its own database. Use `@Import(TestcontainersConfiguration.class)`, or the unreachable-database properties in `ApplicationWithoutDatabaseTest`, which proves the context loads without Docker. `src/test/resources/application-default.yml` applies to all of them.
-- `AuthFlowIT` and `DocumentFlowIT` use real HTTP through `testsupport.ApiClient`, which acts like the browser with cookies and CSRF. `testsupport.TestPdfs` generates real PDF files.
+- Tests never reach a real model: `application-default.yml` points Ollama at an unreachable address, and `testsupport.FakeAiConfiguration` provides predictable fakes. Integration tests import it with `TestcontainersConfiguration`. These fakes prove the plumbing, not the quality of answers, so changes to prompts, models or retrieval must also be run against the real models.
+- `AuthFlowIT`, `DocumentFlowIT` and `QuestionFlowIT` use real HTTP through `testsupport.ApiClient`, which acts like the browser with cookies and CSRF. `testsupport.TestPdfs` generates real PDF files.
 - A `@WebMvcTest` must `@Import(SecurityConfig.class)` to get the real rules. Requests then need `.with(user(new AccountPrincipal(...)))` and, if they change data, `.with(csrf())`.
 - Frontend specs run on Vitest with jsdom. They find elements through `data-testid` and fake the backend with `HttpTestingController`. That fake does not exercise what a browser really sends, so check request bodies and headers explicitly, and run authentication changes in a real browser. A `URLSearchParams` login body passed every spec while the browser sent it as JSON.
 - No test may call a paid API.
@@ -79,6 +83,9 @@ docker compose down -v       # Stops everything and DELETES the database and the
 - The pgvector image in `compose.yaml` and `POSTGRES_IMAGE` in `TestcontainersConfiguration`.
 - Forwarded paths in `frontend/proxy.conf.json` and `frontend/nginx.conf`.
 - The upload limit in `spring.servlet.multipart` in `application.yml`, `client_max_body_size` in `frontend/nginx.conf` and `MAX_FILE_SIZE_BYTES` in `document.model.ts`.
+- `spring.http.clients.read-timeout` in `application.yml` must stay below `proxy_read_timeout` in `frontend/nginx.conf`.
+- The model names in `application.yml` and `compose.yaml`, and the vector dimension in the migrations with the embedding model.
+- The question length in `QuestionRequest` and `MAX_QUESTION_LENGTH` in `ask.ts`.
 - Backend response records and the TypeScript models in `frontend/src/app/core`, mirrored by hand with no code generation. `DocumentFailureReason` also needs a message in `FAILURE_MESSAGES` in `documents.ts`.
 
 ## Working rules
@@ -87,5 +94,5 @@ docker compose down -v       # Stops everything and DELETES the database and the
 - Use only what is free. Do not try, propose or configure anything paid.
 - Commits stay local. Do not add a remote or push. Make one commit at the end of each phase, on a branch for that phase.
 - Code, documentation and UI text are in English.
-- Consult the user before important decisions: base versions, deviations from the phase plan, machine installs, and the choice of AI provider before Phase 3, which must be free. Significant decisions are recorded as ADRs in `docs/adr/`.
+- Consult the user before important decisions: base versions, deviations from the phase plan, machine installs, and anything else with a lasting effect. Significant decisions are recorded as ADRs in `docs/adr/`.
 - Never report something as verified unless it was executed. If a check could not be run, say so and record it in the README's "Project status" section.

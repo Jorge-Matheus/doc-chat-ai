@@ -5,6 +5,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.docchat.testsupport.FakeAiConfiguration;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -16,7 +17,7 @@ import org.springframework.test.web.servlet.MockMvc;
 /** Runs against a real PostgreSQL with pgvector, started by Testcontainers. Requires Docker. */
 @SpringBootTest
 @AutoConfigureMockMvc
-@Import(TestcontainersConfiguration.class)
+@Import({TestcontainersConfiguration.class, FakeAiConfiguration.class})
 class FoundationIT {
 
     @Autowired
@@ -47,12 +48,14 @@ class FoundationIT {
     }
 
     @Test
-    void statusEndpointReportsEveryDependencyAsUp() throws Exception {
+    void statusEndpointReportsEachDependency() throws Exception {
+        // These tests have no Ollama, while readiness below stays up because it does not depend on it.
         mockMvc.perform(get("/api/system/status"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("UP"))
+                .andExpect(jsonPath("$.status").value("DOWN"))
                 .andExpect(jsonPath("$.database").value("UP"))
-                .andExpect(jsonPath("$.vectorExtension").value("UP"));
+                .andExpect(jsonPath("$.vectorExtension").value("UP"))
+                .andExpect(jsonPath("$.ai").value("DOWN"));
     }
 
     @Test

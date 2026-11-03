@@ -9,6 +9,7 @@ export type DocumentFailureReason =
   | 'NO_EXTRACTABLE_TEXT'
   | 'TOO_MANY_PAGES'
   | 'PROCESSING_UNAVAILABLE'
+  | 'EMBEDDING_UNAVAILABLE'
   | 'INTERNAL_ERROR';
 
 /** Mirrors DocumentResponse in the backend. Named to avoid the browser's global Document type. */

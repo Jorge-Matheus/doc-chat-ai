@@ -26,6 +26,7 @@ const FAILURE_MESSAGES: Record<DocumentFailureReason, string> = {
   NO_EXTRACTABLE_TEXT: 'This PDF has no selectable text. Scanned documents are not supported.',
   TOO_MANY_PAGES: 'This PDF has more pages than the supported limit.',
   PROCESSING_UNAVAILABLE: 'The system was busy. Delete this document and upload it again.',
+  EMBEDDING_UNAVAILABLE: 'The AI service was not available. Delete this document and upload it again.',
   INTERNAL_ERROR: 'Something went wrong while reading this file. Delete it and try again.',
 };
 

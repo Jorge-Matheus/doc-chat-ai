@@ -39,7 +39,8 @@ class ApplicationWithoutDatabaseTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("DOWN"))
                 .andExpect(jsonPath("$.database").value("DOWN"))
-                .andExpect(jsonPath("$.vectorExtension").value("UNKNOWN"));
+                .andExpect(jsonPath("$.vectorExtension").value("UNKNOWN"))
+                .andExpect(jsonPath("$.ai").value("DOWN"));
     }
 
     @Test
@@ -77,7 +78,8 @@ class ApplicationWithoutDatabaseTest {
                 .andExpect(jsonPath("$.paths['/api/system/status'].get").exists())
                 .andExpect(jsonPath("$.paths['/api/auth/register'].post").exists())
                 .andExpect(jsonPath("$.paths['/api/auth/login'].post").exists())
-                .andExpect(jsonPath("$.paths['/api/documents'].post").exists());
+                .andExpect(jsonPath("$.paths['/api/documents'].post").exists())
+                .andExpect(jsonPath("$.paths['/api/questions'].post").exists());
         mockMvc.perform(get("/swagger-ui/index.html"))
                 .andExpect(status().isOk())
                 .andExpect(content().string(containsString("swagger")));

@@ -12,6 +12,30 @@ spring:
       query-timeout: 5s
   lifecycle:
     timeout-per-shutdown-phase: 20s
+  http:
+    clients:
+      connect-timeout: 3s
+      # Answering can take a while, mostly when the model has to be loaded first.
+      read-timeout: 170s
+  ai:
+    ollama:
+      base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
+      init:
+        # Compose downloads the models, so the backend never waits for a download.
+        pull-model-strategy: never
+      chat:
+        model: ${OLLAMA_CHAT_MODEL:qwen3.5:9b}
+        num-ctx: 8192
+        temperature: 0.1
+        think: false
+      embedding:
+        model: ${OLLAMA_EMBEDDING_MODEL:bge-m3}
+    retry:
+      max-attempts: 2
+      backoff:
+        initial-interval: 1s
+        multiplier: 2
+        max-interval: 5s
   servlet:
     multipart:
       # Keep in sync with client_max_body_size in frontend/nginx.conf and MAX_FILE_SIZE_BYTES in
@@ -65,3 +89,8 @@ docchat:
     workers: 2
     queue-capacity: 100
     max-pages: 2000
+  rag:
+    # How many passages the model reads, and how similar to the question they must be.
+    top-k: 6
+    # Measured with bge-m3: related questions scored 0.66 or more, and unrelated ones about 0.26.
+    min-similarity: 0.35

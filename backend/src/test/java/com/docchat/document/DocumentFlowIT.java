@@ -5,6 +5,7 @@ import static org.awaitility.Awaitility.await;
 
 import com.docchat.TestcontainersConfiguration;
 import com.docchat.testsupport.ApiClient;
+import com.docchat.testsupport.FakeAiConfiguration;
 import com.docchat.testsupport.TestPdfs;
 import com.jayway.jsonpath.JsonPath;
 import java.net.http.HttpResponse;
@@ -24,7 +25,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 
 /** Uploads real PDF files over real HTTP and checks the database and the disk. Requires Docker. */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@Import(TestcontainersConfiguration.class)
+@Import({TestcontainersConfiguration.class, FakeAiConfiguration.class})
 class DocumentFlowIT {
 
     private static final String PASSWORD = "correct horse battery";

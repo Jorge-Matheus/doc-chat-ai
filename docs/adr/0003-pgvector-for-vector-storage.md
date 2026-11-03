@@ -14,7 +14,7 @@ Store embeddings in PostgreSQL with the pgvector extension, using the same datab
 
 - There is one system to run, back up and secure.
 - Foreign keys can tie vectors to their documents, so ownership filters and deletion stay consistent.
-- Spring AI has a pgvector integration, so vector operations do not need to be written by hand.
+- Spring AI has a pgvector integration. Phase 3 did not use it, in order to keep the foreign keys above. See [ADR 0007](0007-local-ai-with-ollama.md).
 - Very large collections may eventually need a dedicated system. This is not expected for this project.
 - Creating the extension needs enough database privileges, which managed PostgreSQL services may restrict.
-- The vector dimension must match the embedding model, so it is defined in Phase 3 together with the provider.
+- The vector dimension must match the embedding model. It is 1024, for `bge-m3`.
