@@ -16,6 +16,7 @@ import {
 import { DocumentService } from '../../core/documents/document.service';
 import { errorMessage } from '../../core/http/error-message';
 import { ConfirmDialog, ConfirmDialogData } from '../../core/ui/confirm-dialog';
+import { Icon } from '../../core/ui/icon';
 
 const PAGE_SIZE = 10;
 export const POLL_INTERVAL_MS = 2000;
@@ -32,7 +33,7 @@ const FAILURE_MESSAGES: Record<DocumentFailureReason, string> = {
 
 @Component({
   selector: 'app-documents',
-  imports: [DatePipe, MatButtonModule, MatPaginatorModule, MatProgressBarModule],
+  imports: [DatePipe, MatButtonModule, MatPaginatorModule, MatProgressBarModule, Icon],
   templateUrl: './documents.html',
   styleUrl: './documents.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,

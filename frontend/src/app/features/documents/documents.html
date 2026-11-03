@@ -1,41 +1,52 @@
-<div class="heading">
-  <h1>Your documents</h1>
-  <button matButton="filled" type="button" [disabled]="uploading()" (click)="fileInput.click()">
-    {{ uploading() ? 'Uploading...' : 'Upload PDF' }}
-  </button>
-  <input
-    #fileInput
-    class="file-input"
-    type="file"
-    accept="application/pdf,.pdf"
-    aria-label="Choose a PDF file"
-    data-testid="file-input"
-    (change)="onFileSelected($event)"
-  />
+<div class="band full-bleed page-top on-ink">
+  <div class="heading">
+    <div>
+      <h1>Your documents</h1>
+      <p class="limits">PDF files with selectable text, up to {{ maxFileSizeLabel }}.</p>
+    </div>
+    <button matButton="filled" type="button" [disabled]="uploading()" (click)="fileInput.click()">
+      <app-icon name="upload" class="button-icon" />
+      {{ uploading() ? 'Uploading...' : 'Upload PDF' }}
+    </button>
+    <input
+      #fileInput
+      class="file-input"
+      type="file"
+      accept="application/pdf,.pdf"
+      aria-label="Choose a PDF file"
+      data-testid="file-input"
+      (change)="onFileSelected($event)"
+    />
+  </div>
 </div>
-<p class="limits">PDF files with selectable text, up to {{ maxFileSizeLabel }}.</p>
-
-@if (uploading()) {
-  <mat-progress-bar mode="indeterminate" aria-label="Uploading the file" />
-}
-@if (actionError(); as message) {
-  <p class="message-error" role="alert" data-testid="action-error">{{ message }}</p>
-}
 
 <section aria-live="polite">
+  @if (uploading()) {
+    <mat-progress-bar mode="indeterminate" aria-label="Uploading the file" />
+  }
+  @if (actionError(); as message) {
+    <p class="notice notice-error" role="alert" data-testid="action-error">{{ message }}</p>
+  }
+
   @if (loadFailed()) {
-    <p class="message-error" data-testid="load-error">Your documents could not be loaded.</p>
-    <button matButton="outlined" type="button" (click)="load()">Try again</button>
+    <div class="notice">
+      <p class="message-error" data-testid="load-error">Your documents could not be loaded.</p>
+      <button matButton="outlined" type="button" (click)="load()">Try again</button>
+    </div>
   } @else if (loading()) {
-    <p data-testid="loading">Loading your documents...</p>
+    <p class="notice" data-testid="loading">Loading your documents...</p>
   } @else if (documents().length === 0) {
-    <p class="empty" data-testid="empty">You have no documents yet. Upload a PDF to get started.</p>
+    <div class="empty" data-testid="empty">
+      <span class="empty-icon"><app-icon name="file" /></span>
+      You have no documents yet. Upload a PDF to get started.
+    </div>
   }
 
   @if (documents().length > 0) {
     <ul class="documents">
       @for (document of documents(); track document.id) {
         <li class="document" data-testid="document">
+          <span class="file-tile"><app-icon name="file" /></span>
           <div class="details">
             <span class="filename">{{ document.filename }}</span>
             <span class="facts">
@@ -49,29 +60,34 @@
               <span class="message-error" data-testid="document-failure">{{ failure }}</span>
             }
           </div>
-          <span class="badge" [class]="'badge badge-' + document.status.toLowerCase()">
+          <span [class]="'badge badge-' + document.status.toLowerCase()">
             {{ statusLabels[document.status] }}
           </span>
-          @if (document.status === 'READY') {
-            <a
+          <div class="row-actions">
+            @if (document.status === 'READY') {
+              <a
+                matButton
+                target="_blank"
+                rel="noopener"
+                data-testid="open-file"
+                [href]="fileUrl(document)"
+                [attr.aria-label]="'Open ' + document.filename + ' in a new tab'"
+              >
+                <app-icon name="external" class="button-icon" />
+                Open
+              </a>
+            }
+            <button
               matButton
-              target="_blank"
-              rel="noopener"
-              data-testid="open-file"
-              [href]="fileUrl(document)"
-              [attr.aria-label]="'Open ' + document.filename + ' in a new tab'"
+              type="button"
+              class="delete"
+              [attr.aria-label]="'Delete ' + document.filename"
+              (click)="confirmDelete(document)"
             >
-              Open
-            </a>
-          }
-          <button
-            matButton
-            type="button"
-            [attr.aria-label]="'Delete ' + document.filename"
-            (click)="confirmDelete(document)"
-          >
-            Delete
-          </button>
+              <app-icon name="trash" class="button-icon" />
+              Delete
+            </button>
+          </div>
         </li>
       }
     </ul>

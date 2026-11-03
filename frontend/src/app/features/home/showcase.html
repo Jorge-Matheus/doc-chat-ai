@@ -1,0 +1,90 @@
+<section
+  class="showcase"
+  aria-roledescription="carousel"
+  aria-label="A tour of DocChat AI"
+  (mouseenter)="setHovering(true)"
+  (mouseleave)="setHovering(false)"
+  (focusin)="setFocused(true)"
+  (focusout)="setFocused(false)"
+>
+  <div class="tabs" role="group" aria-label="Choose a screen">
+    @for (slide of slides; track slide.image; let index = $index) {
+      <button
+        type="button"
+        class="tab"
+        data-testid="showcase-tab"
+        [class.active]="index === current()"
+        [attr.aria-current]="index === current() ? 'true' : null"
+        (click)="select(index)"
+      >
+        <app-icon [name]="slide.icon" />
+        <span>{{ slide.label }}</span>
+        @if (index === current() && running()) {
+          <i class="progress" [style.animation-duration.ms]="intervalMs()"></i>
+        }
+      </button>
+    }
+  </div>
+
+  <div class="caption-row">
+    <p class="caption" data-testid="showcase-caption" [attr.aria-live]="running() ? 'off' : 'polite'">
+      {{ currentSlide().caption }}
+    </p>
+    <button
+      type="button"
+      class="toggle"
+      data-testid="showcase-toggle"
+      [attr.aria-label]="playing() ? 'Pause the tour' : 'Play the tour'"
+      (click)="togglePlaying()"
+    >
+      <app-icon [name]="playing() ? 'pause' : 'play'" />
+    </button>
+  </div>
+
+  <div class="window">
+    <div class="window-bar" aria-hidden="true">
+      <i></i><i></i><i></i>
+      <span class="address">localhost:4200</span>
+    </div>
+    <div class="viewport">
+      @for (slide of slides; track slide.image; let index = $index) {
+        <figure
+          class="slide"
+          role="group"
+          aria-roledescription="slide"
+          data-testid="showcase-slide"
+          [class.active]="index === current()"
+          [attr.aria-label]="index + 1 + ' of ' + slides.length"
+          [attr.aria-hidden]="index === current() ? null : 'true'"
+        >
+          <img
+            width="1600"
+            height="1000"
+            decoding="async"
+            [attr.loading]="index === 0 ? 'eager' : 'lazy'"
+            [src]="slide.image"
+            [alt]="slide.alt"
+          />
+        </figure>
+      }
+      <button
+        type="button"
+        class="arrow arrow-previous"
+        data-testid="showcase-previous"
+        aria-label="Previous screen"
+        (click)="move(-1)"
+      >
+        <app-icon name="chevron-left" />
+      </button>
+      <button
+        type="button"
+        class="arrow arrow-next"
+        data-testid="showcase-next"
+        aria-label="Next screen"
+        (click)="move(1)"
+      >
+        <app-icon name="chevron-right" />
+      </button>
+    </div>
+  </div>
+</section>

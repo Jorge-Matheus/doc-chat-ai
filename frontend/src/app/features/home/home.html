@@ -1,29 +1,98 @@
-<section class="intro">
-  <h1>Ask questions about your documents</h1>
-  <p>
-    DocChat AI answers questions about your PDF files and shows the pages each answer came from.
-  </p>
-  <p class="notice">
-    Upload PDF files, ask questions about them and check each answer against its source page.
-    Everything runs on your own computer.
-  </p>
-  <div class="actions">
-    @if (auth.user()) {
-      <a matButton="filled" routerLink="/ask">Ask your documents</a>
-      <a matButton="outlined" routerLink="/documents">Your documents</a>
-    } @else {
-      <a matButton="filled" routerLink="/register">Create account</a>
-      <a matButton="outlined" routerLink="/login">Sign in</a>
-    }
+<section class="hero full-bleed page-top on-ink">
+  <div class="hero-inner">
+    <p class="eyebrow">
+      <app-icon name="lock" />
+      <span>Private by design. Everything runs on your own computer.</span>
+    </p>
+    <h1>Ask your documents.<br /><span class="marked">Check every answer.</span></h1>
+    <p class="lead">
+      DocChat AI answers questions about your PDF files and shows the pages each answer came from.
+    </p>
+    <div class="actions">
+      @if (auth.user()) {
+        <a matButton="filled" routerLink="/ask">Ask your documents</a>
+        <a matButton="outlined" routerLink="/documents">Your documents</a>
+      } @else {
+        <a matButton="filled" routerLink="/register">Create account</a>
+        <a matButton="outlined" routerLink="/login">Sign in</a>
+      }
+    </div>
+    <app-showcase />
+  </div>
+</section>
+
+<section class="steps" aria-labelledby="steps-title">
+  <h2 id="steps-title">From a PDF to an answer you can verify</h2>
+  <ol>
+    <li>
+      <span class="step-number" aria-hidden="true">1</span>
+      <h3>Upload your PDFs</h3>
+      <p>They are read and indexed on this computer, page by page.</p>
+    </li>
+    <li>
+      <span class="step-number" aria-hidden="true">2</span>
+      <h3>Ask in your own words</h3>
+      <p>The answer comes only from your documents, in the language of your question.</p>
+    </li>
+    <li>
+      <span class="step-number" aria-hidden="true">3</span>
+      <h3>Check the source</h3>
+      <p>Each citation opens the passage, marked on its page, and the original file.</p>
+    </li>
+  </ol>
+</section>
+
+<section class="features" aria-label="What makes it different">
+  <article class="feature">
+    <span class="feature-icon"><app-icon name="highlight" /></span>
+    <h2>Every answer shows its page</h2>
+    <p>The server links each citation to a real file and page, so the model cannot invent one.</p>
+  </article>
+  <article class="feature">
+    <span class="feature-icon"><app-icon name="question" /></span>
+    <h2>It says when it does not know</h2>
+    <p>If your documents do not contain the answer, you are told so instead of getting a guess.</p>
+  </article>
+  <article class="feature">
+    <span class="feature-icon"><app-icon name="lock" /></span>
+    <h2>Your files stay with you</h2>
+    <p>The AI models run on this computer, with no cloud service, no subscription and no cost.</p>
+  </article>
+</section>
+
+<section class="numbers full-bleed" aria-labelledby="numbers-note">
+  <div class="numbers-inner">
+    <div class="number">
+      <strong>100%</strong>
+      <span>on your computer, with nothing sent elsewhere</span>
+    </div>
+    <div class="number">
+      <strong>1 to 3 s</strong>
+      <span>for a typical answer</span>
+    </div>
+    <div class="number">
+      <strong>110 s</strong>
+      <span>to read a PDF of 500 pages</span>
+    </div>
+    <div class="number">
+      <strong>$0</strong>
+      <span>free software, with no subscription</span>
+    </div>
+    <p class="numbers-note" id="numbers-note">Times measured on an RTX 3060 with 12 GB of memory.</p>
   </div>
 </section>
 
 <section class="status" aria-labelledby="status-title" aria-live="polite">
-  <h2 id="status-title">System status</h2>
-
   @let current = view();
+  <div class="status-heading">
+    <h2 id="status-title">System status</h2>
+    @if (current.state === 'reachable') {
+      <button matButton type="button" (click)="refresh()">Check again</button>
+    }
+  </div>
+
   @if (current.state === 'loading') {
-    <p data-testid="status-loading">Checking the backend...</p>
+    <p class="status-note" data-testid="status-loading">Checking the backend...</p>
   } @else if (current.state === 'unreachable') {
     <p class="message message-error" data-testid="status-unreachable">
       The backend could not be reached. Check that it is running, then try again.
@@ -45,6 +114,5 @@
         The backend is running, but a dependency it needs is not available.
       </p>
     }
-    <button matButton="outlined" type="button" (click)="refresh()">Check again</button>
   }
 </section>

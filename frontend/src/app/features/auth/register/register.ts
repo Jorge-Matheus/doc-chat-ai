@@ -7,12 +7,14 @@ import { MatInputModule } from '@angular/material/input';
 import { Router, RouterLink } from '@angular/router';
 import { AuthService } from '../../../core/auth/auth.service';
 import { errorMessage } from '../../../core/http/error-message';
+import { BrandMark } from '../../../core/ui/brand-mark';
+import { AuthAside } from '../auth-aside';
 
 const MIN_PASSWORD_LENGTH = 12;
 
 @Component({
   selector: 'app-register',
-  imports: [ReactiveFormsModule, RouterLink, MatButtonModule, MatFormFieldModule, MatInputModule],
+  imports: [ReactiveFormsModule, RouterLink, MatButtonModule, MatFormFieldModule, MatInputModule, BrandMark, AuthAside],
   templateUrl: './register.html',
   styleUrl: '../auth-form.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,

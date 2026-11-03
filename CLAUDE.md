@@ -67,7 +67,7 @@ docker compose down -v       # Also DELETES the database, the uploaded files and
 
 **Spring Boot 4.** The project uses modular starters, including one test starter per technology, and new package names such as `org.springframework.boot.health.contributor` and `org.springframework.boot.webmvc.test.autoconfigure`. It also uses Jackson 3 and Spring Security 7. Code from older tutorials usually needs adapting.
 
-**Frontend.** Angular standalone components with signals, `OnPush` and `inject()`, using Angular Material ([ADR 0006](docs/adr/0006-angular-material.md)) with no icon fonts or other external assets. Files and classes have no `.component` suffix (`home.ts`, `Home`). `core/<domain>` holds services and models, and `features/<name>` holds lazily loaded pages (`loadComponent` in `app.routes.ts`). `/ask` and `/ask/:id` share one route through the `askUrl` matcher, so moving between conversations keeps the same page instead of recreating it. Interpolation adds spaces around inline text, so text next to citations and marked passages is bound with `[textContent]`. An app initializer asks who is signed in before routing starts, so guards can read `AuthService` synchronously.
+**Frontend.** Angular standalone components with signals, `OnPush` and `inject()`, using Angular Material ([ADR 0006](docs/adr/0006-angular-material.md)) with no icon fonts or other external assets. Colours, fonts, radii and shadows are CSS variables in `styles.scss`, which also feed Material's theme, so use them instead of literal values and keep text pairs at 4.5:1 contrast or more. Icons are `core/ui/icon.ts`, inline SVG with no text of their own. Files and classes have no `.component` suffix (`home.ts`, `Home`). `core/<domain>` holds services and models, and `features/<name>` holds lazily loaded pages (`loadComponent` in `app.routes.ts`). `/ask` and `/ask/:id` share one route through the `askUrl` matcher, so moving between conversations keeps the same page instead of recreating it. Interpolation adds spaces around inline text, so text next to citations and marked passages is bound with `[textContent]`. An app initializer asks who is signed in before routing starts, so guards can read `AuthService` synchronously.
 
 ## Tests
 
@@ -88,6 +88,9 @@ docker compose down -v       # Also DELETES the database, the uploaded files and
 - `spring.http.clients.read-timeout` in `application.yml` must stay below `proxy_read_timeout` in `frontend/nginx.conf`.
 - The model names in `application.yml` and `compose.yaml`, and the vector dimension in the migrations with the embedding model.
 - The question length in `QuestionRequest` in `ConversationController` and `MAX_QUESTION_LENGTH` in `ask.ts`.
+- The drawing and colours in `core/ui/brand-mark.ts` and `frontend/public/favicon.svg`, and `--color-ink` in `styles.scss` with `theme-color` in `index.html`.
+- The captures in `frontend/public/showcase` with the screens they show, retaken when those change visibly.
+- The measured times on the home page and the hardware table in the README.
 - Backend response records and the TypeScript models in `frontend/src/app/core`, mirrored by hand with no code generation. `DocumentFailureReason` also needs a message in `FAILURE_MESSAGES` in `documents.ts`.
 
 ## Working rules

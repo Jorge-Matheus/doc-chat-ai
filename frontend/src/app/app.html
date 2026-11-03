@@ -1,17 +1,36 @@
-<header>
-  <mat-toolbar class="app-header">
-    <a class="brand" routerLink="/">DocChat AI</a>
-    <span class="spacer"></span>
+<header class="app-header on-ink">
+  <div class="header-inner">
+    <a class="brand" routerLink="/">
+      <app-brand-mark />
+      <span class="brand-name">DocChat AI</span>
+    </a>
+
     @if (auth.user(); as user) {
-      <a matButton routerLink="/ask">Ask</a>
-      <a matButton routerLink="/documents">Documents</a>
-      <span class="user-email" data-testid="user-email">{{ user.email }}</span>
-      <button matButton type="button" (click)="signOut()">Sign out</button>
+      <nav class="main-nav" aria-label="Main">
+        <a routerLink="/ask" routerLinkActive="active" ariaCurrentWhenActive="page">
+          <app-icon name="chat" />
+          Ask
+        </a>
+        <a routerLink="/documents" routerLinkActive="active" ariaCurrentWhenActive="page">
+          <app-icon name="file" />
+          Documents
+        </a>
+      </nav>
+      <span class="spacer"></span>
+      <div class="account">
+        <span class="avatar" aria-hidden="true">{{ user.email.charAt(0).toUpperCase() }}</span>
+        <span class="user-email" data-testid="user-email">{{ user.email }}</span>
+      </div>
+      <button matButton type="button" (click)="signOut()">
+        <app-icon name="logout" class="button-icon" />
+        Sign out
+      </button>
     } @else {
+      <span class="spacer"></span>
       <a matButton routerLink="/login">Sign in</a>
-      <a matButton="filled" routerLink="/register">Create account</a>
+      <a matButton="filled" class="header-cta" routerLink="/register">Create account</a>
     }
-  </mat-toolbar>
+  </div>
 </header>
 <main class="app-main">
   @if (signOutFailed()) {
@@ -19,3 +38,12 @@
   }
   <router-outlet />
 </main>
+<footer class="app-footer">
+  <div class="footer-inner">
+    <a class="brand" routerLink="/">
+      <app-brand-mark />
+      <span class="brand-name">DocChat AI</span>
+    </a>
+    <p>Answers from your own PDF files, with the pages to prove them. Everything runs on your computer.</p>
+  </div>
+</footer>

@@ -1,12 +1,13 @@
 import { ChangeDetectionStrategy, Component, computed, input, output } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { Turn, TurnCitation } from '../../core/conversations/conversation.model';
+import { Icon } from '../../core/ui/icon';
 import { answerParts } from './answer-parts';
 
 /** One question with its answer and sources. Text from documents is only ever bound as text. */
 @Component({
   selector: 'app-turn-view',
-  imports: [MatButtonModule],
+  imports: [MatButtonModule, Icon],
   templateUrl: './turn-view.html',
   styleUrl: './turn-view.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,

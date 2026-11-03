@@ -1,59 +1,265 @@
 :host {
   display: grid;
-  gap: 2rem;
+  gap: 3.5rem;
 }
 
-.intro {
-  h1 {
-    margin: 0 0 0.75rem;
-    font-size: clamp(1.75rem, 5vw, 2.5rem);
-    line-height: 1.15;
+.hero {
+  padding: 3.5rem 1.5rem 0;
+  // Starts with the exact colour of the navigation bar, so the two read as one surface.
+  background:
+    radial-gradient(60rem 30rem at 50% 62%, rgb(45 180 160 / 16%), transparent 70%),
+    linear-gradient(180deg, var(--color-ink) 0%, var(--color-ink-soft) 100%);
+  color: var(--color-on-ink);
+  text-align: center;
+}
+
+.hero-inner {
+  max-width: 62rem;
+  margin-inline: auto;
+}
+
+.eyebrow {
+  display: inline-flex;
+  gap: 0.5rem;
+  align-items: center;
+  margin: 0 0 1.25rem;
+  padding: 0.25rem 0.875rem;
+  border: 1px solid rgb(255 255 255 / 22%);
+  border-radius: 999px;
+  color: var(--color-on-ink-muted);
+  font-size: 0.875rem;
+}
+
+h1 {
+  margin: 0 0 1.25rem;
+  color: var(--color-on-ink);
+  font-size: clamp(2.375rem, 6vw, 4.25rem);
+  line-height: 1.18;
+}
+
+// A stroke of highlighter. Dark text keeps it readable on the yellow.
+.marked {
+  display: inline-block;
+  margin-top: 0.1em;
+  padding: 0 0.16em 0.04em;
+  border-radius: 0.1em;
+  background: var(--color-marker-strong);
+  color: var(--color-ink);
+  line-height: 1.1;
+}
+
+.lead {
+  max-width: 38rem;
+  margin: 0 auto 1.75rem;
+  color: var(--color-on-ink-muted);
+  font-size: 1.1875rem;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  justify-content: center;
+  margin-bottom: 2.75rem;
+
+  a {
+    height: 2.875rem;
+    padding-inline: 1.5rem;
+    font-size: 1rem;
+  }
+}
+
+// The window of the tour hangs over the end of the dark section.
+app-showcase {
+  margin-bottom: -6rem;
+}
+
+.steps {
+  padding-top: 6rem;
+  text-align: center;
+
+  h2 {
+    margin: 0 0 2rem;
+    font-size: clamp(1.625rem, 3.2vw, 2.25rem);
+    line-height: 1.2;
+  }
+
+  ol {
+    position: relative;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 1.5rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+
+    // The line that joins the three numbers.
+    &::before {
+      position: absolute;
+      top: 1.5rem;
+      right: 16.6%;
+      left: 16.6%;
+      border-top: 2px dashed var(--color-border-strong);
+      content: '';
+    }
+  }
+
+  li {
+    position: relative;
+    padding-inline: 0.5rem;
+  }
+
+  h3 {
+    margin: 0.875rem 0 0.25rem;
+    font-size: 1.1875rem;
   }
 
   p {
-    margin: 0 0 0.75rem;
-    color: var(--color-text-muted);
-  }
-
-  .notice {
     margin: 0;
-    padding: 0.75rem 1rem;
-    border-left: 3px solid var(--color-accent);
-    background: var(--color-surface);
-    color: var(--color-text);
+    color: var(--color-text-muted);
+    font-size: 0.9375rem;
+  }
+}
+
+.step-number {
+  display: inline-grid;
+  place-items: center;
+  width: 3rem;
+  height: 3rem;
+  border-radius: 50%;
+  background: var(--color-ink);
+  box-shadow: 0 0 0 6px var(--color-background);
+  color: var(--color-marker-strong);
+  font-family: var(--font-serif);
+  font-size: 1.375rem;
+  font-weight: 700;
+}
+
+.features {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.feature {
+  padding: 1.5rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sm);
+  transition: box-shadow 180ms ease, transform 180ms ease;
+
+  &:hover {
+    box-shadow: var(--shadow-md);
+    transform: translateY(-2px);
   }
 
-  .actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-    margin-top: 1rem;
+  h2 {
+    margin: 0.875rem 0 0.375rem;
+    font-size: 1.125rem;
+    line-height: 1.3;
   }
+
+  p {
+    margin: 0;
+    color: var(--color-text-muted);
+    font-size: 0.9375rem;
+  }
+}
+
+.feature-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: var(--radius-md);
+  background: var(--color-accent-soft);
+  color: var(--color-accent-strong);
+  font-size: 1.125rem;
+}
+
+.numbers {
+  padding: 2.5rem 1.5rem 1.5rem;
+  background: var(--color-ink);
+  color: var(--color-on-ink);
+}
+
+.numbers-inner {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1.5rem;
+  max-width: 73rem;
+  margin-inline: auto;
+}
+
+.number {
+  display: grid;
+  align-content: start;
+  gap: 0.125rem;
+
+  strong {
+    color: var(--color-marker-strong);
+    font-family: var(--font-serif);
+    font-size: 2.25rem;
+    font-weight: 700;
+    line-height: 1.15;
+  }
+
+  span {
+    color: var(--color-on-ink-muted);
+    font-size: 0.9375rem;
+  }
+}
+
+.numbers-note {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--color-on-ink-muted);
+  font-size: 0.8125rem;
 }
 
 .status {
-  padding: 1.5rem;
+  padding: 1.25rem 1.5rem;
   border: 1px solid var(--color-border);
-  border-radius: 0.75rem;
+  border-radius: var(--radius-lg);
   background: var(--color-surface);
-
-  h2 {
-    margin: 0 0 1rem;
-    font-size: 1.125rem;
-  }
 }
 
-.rows {
-  margin: 0 0 1rem;
-}
-
-.row {
+.status-heading {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  padding: 0.625rem 0;
-  border-top: 1px solid var(--color-border);
+  min-height: 2.5rem;
+
+  h2 {
+    margin: 0;
+    font-size: 1.0625rem;
+  }
+}
+
+.status-note {
+  margin: 0.25rem 0 0;
+  color: var(--color-text-muted);
+}
+
+.rows {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.5rem;
+  margin: 0.5rem 0 0;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.25rem 0.75rem;
+  padding: 0.625rem 0.875rem;
+  border-radius: var(--radius-md);
+  background: var(--color-background);
+  font-size: 0.875rem;
 
   dd {
     margin: 0;
@@ -61,31 +267,85 @@
 }
 
 .badge {
-  padding: 0.125rem 0.625rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.0625rem 0.5rem;
   border-radius: 999px;
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
   font-weight: 600;
+
+  &::before {
+    width: 0.4375rem;
+    height: 0.4375rem;
+    border-radius: 50%;
+    background: currentcolor;
+    content: '';
+  }
 }
 
 .badge-up {
-  background: #dcfce7;
-  color: #166534;
+  background: var(--color-success-soft);
+  color: var(--color-success);
 }
 
 .badge-down {
-  background: #fee2e2;
-  color: #991b1b;
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
 }
 
 .badge-unknown {
-  background: #e5e7eb;
-  color: #374151;
+  background: var(--color-surface-sunken);
+  color: var(--color-text-muted);
 }
 
 .message {
-  margin: 0 0 1rem;
+  margin: 0.75rem 0;
 }
 
 .message-error {
-  color: #991b1b;
+  color: var(--color-danger);
+}
+
+@media (max-width: 60rem) {
+  :host {
+    gap: 2.5rem;
+  }
+
+  .hero {
+    padding: 2rem 1rem 0;
+  }
+
+  .features,
+  .steps ol {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .steps ol::before {
+    display: none;
+  }
+
+  .numbers-inner,
+  .rows {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  app-showcase {
+    margin-bottom: -3rem;
+  }
+
+  .steps {
+    padding-top: 3.5rem;
+  }
+}
+
+@media (max-width: 30rem) {
+  .rows {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .eyebrow {
+    border-radius: var(--radius-md);
+    text-align: left;
+  }
 }

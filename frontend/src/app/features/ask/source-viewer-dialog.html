@@ -1,22 +1,22 @@
-<h2 mat-dialog-title class="title">{{ data.filename }}</h2>
+<div class="viewer-head">
+  <span class="file-tile"><app-icon name="file" /></span>
+  <h2 mat-dialog-title class="title">{{ data.filename }}</h2>
+  <button type="button" class="close" mat-dialog-close aria-label="Close">
+    <app-icon name="close" />
+  </button>
+</div>
 
-<mat-dialog-content>
-  <p class="position" aria-live="polite" data-testid="page-position">
-    Page {{ pageNumber() }}
-    @if (page(); as current) {
-      of {{ current.pageCount }}
-    }
-  </p>
-
+<mat-dialog-content class="viewer-body">
   @if (loadFailed()) {
     <p class="message-error" role="alert" data-testid="page-error">
-      This page could not be loaded. The document may have been deleted.
+      <app-icon name="alert" />
+      <span>This page could not be loaded. The document may have been deleted.</span>
     </p>
   } @else if (parts(); as text) {
     @if (page()?.text === '') {
       <p class="empty" data-testid="page-empty">No text could be read from this page.</p>
     } @else {
-      <div class="page-text" data-testid="page-text">
+      <div class="sheet" data-testid="page-text">
         <!-- Bound with textContent because interpolation would add spaces around the passage. -->
         <span [textContent]="text.before"></span>
         @if (text.passage; as passage) {
@@ -26,34 +26,43 @@
       </div>
     }
   } @else if (loading()) {
-    <p data-testid="page-loading">Loading the page...</p>
+    <p class="empty" data-testid="page-loading">Loading the page...</p>
   }
 
   <p class="note">This is the text read from the PDF. Tables and layout can look different there.</p>
 </mat-dialog-content>
 
-<mat-dialog-actions>
-  <button
-    matButton
-    type="button"
-    data-testid="previous-page"
-    [disabled]="loading() || pageNumber() <= 1"
-    (click)="goTo(pageNumber() - 1)"
-  >
-    Previous
-  </button>
-  <button
-    matButton
-    type="button"
-    data-testid="next-page"
-    [disabled]="loading() || !page() || pageNumber() >= (page()?.pageCount ?? 0)"
-    (click)="goTo(pageNumber() + 1)"
-  >
-    Next
-  </button>
-  <span class="spacer"></span>
-  <a matButton target="_blank" rel="noopener" data-testid="open-original" [href]="fileUrl()">
+<mat-dialog-actions class="viewer-actions">
+  <div class="pager">
+    <button
+      matButton
+      type="button"
+      data-testid="previous-page"
+      [disabled]="loading() || pageNumber() <= 1"
+      (click)="goTo(pageNumber() - 1)"
+    >
+      <app-icon name="chevron-left" />
+      Previous
+    </button>
+    <span class="position" aria-live="polite" data-testid="page-position">
+      Page {{ pageNumber() }}
+      @if (page(); as current) {
+        of {{ current.pageCount }}
+      }
+    </span>
+    <button
+      matButton
+      type="button"
+      data-testid="next-page"
+      [disabled]="loading() || !page() || pageNumber() >= (page()?.pageCount ?? 0)"
+      (click)="goTo(pageNumber() + 1)"
+    >
+      Next
+      <app-icon name="chevron-right" />
+    </button>
+  </div>
+  <a matButton="outlined" target="_blank" rel="noopener" data-testid="open-original" [href]="fileUrl()">
+    <app-icon name="external" class="button-icon" />
     Open original PDF
   </a>
-  <button matButton="filled" type="button" mat-dialog-close>Close</button>
 </mat-dialog-actions>

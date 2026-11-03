@@ -1,13 +1,44 @@
 :host {
-  display: block;
-  max-width: 26rem;
-  margin: 0 auto;
+  display: grid;
+  place-items: center;
+  min-height: calc(100vh - 16rem);
+}
+
+.card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  width: min(58rem, 100%);
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-md);
+}
+
+// The form comes first for screen readers and the keyboard, and shows on the right.
+app-auth-aside {
+  order: -1;
+}
+
+.form-panel {
+  padding: 2.5rem;
+}
+
+app-brand-mark {
+  width: 2.5rem;
+  height: 2.5rem;
+  margin-bottom: 1.25rem;
 }
 
 h1 {
-  margin: 0 0 1.5rem;
-  font-size: 1.75rem;
+  margin: 0 0 0.25rem;
+  font-size: 1.875rem;
   line-height: 1.2;
+}
+
+.lead {
+  margin: 0 0 1.5rem;
+  color: var(--color-text-muted);
 }
 
 form {
@@ -15,16 +46,41 @@ form {
   gap: 0.5rem;
 }
 
+button[type='submit'] {
+  height: 2.75rem;
+  margin-top: 0.25rem;
+}
+
 .form-error {
   margin: 0 0 0.5rem;
-  color: #991b1b;
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--radius-sm);
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+  font-size: 0.875rem;
 }
 
 .alternative {
-  margin: 1.5rem 0 0;
+  margin: 1.25rem 0 0;
   color: var(--color-text-muted);
+  font-size: 0.9375rem;
+  text-align: center;
 }
 
 a {
   color: var(--color-accent);
+  font-weight: 500;
+}
+
+@media (max-width: 52rem) {
+  .card {
+    grid-template-columns: minmax(0, 1fr);
+    width: min(28rem, 100%);
+  }
+}
+
+@media (max-width: 30rem) {
+  .form-panel {
+    padding: 1.5rem;
+  }
 }

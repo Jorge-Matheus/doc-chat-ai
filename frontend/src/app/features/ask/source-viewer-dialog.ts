@@ -15,6 +15,7 @@ import { MAT_DIALOG_DATA, MatDialogModule } from '@angular/material/dialog';
 import { catchError, of, startWith, Subject, switchMap } from 'rxjs';
 import { DocumentPage } from '../../core/documents/document.model';
 import { DocumentService } from '../../core/documents/document.service';
+import { Icon } from '../../core/ui/icon';
 
 export interface SourceViewerData {
   readonly documentId: string;
@@ -30,7 +31,7 @@ export interface SourceViewerData {
  */
 @Component({
   selector: 'app-source-viewer-dialog',
-  imports: [MatButtonModule, MatDialogModule],
+  imports: [MatButtonModule, MatDialogModule, Icon],
   templateUrl: './source-viewer-dialog.html',
   styleUrl: './source-viewer-dialog.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,

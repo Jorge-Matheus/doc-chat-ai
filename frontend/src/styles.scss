@@ -1,22 +1,91 @@
 @use '@angular/material' as mat;
 
+// A reading room: warm paper, dark ink, one calm colour, and the yellow of a highlighter, because
+// marking the source of an answer is what this application is about.
 :root {
-  --color-text: #1f2937;
-  --color-text-muted: #4b5563;
-  --color-background: #f9fafb;
-  --color-surface: #ffffff;
-  --color-border: #e5e7eb;
-  --color-accent: #1d4ed8;
+  --color-background: #f6f3ec;
+  --color-surface: #fffdf8;
+  --color-surface-sunken: #efebe1;
+  --color-border: #e5dfd2;
+  --color-border-strong: #cdc5b4;
+  --color-text: #1f2a2e;
+  --color-text-muted: #59656b;
+  --color-accent: #0e6b5e;
+  --color-accent-strong: #0a5048;
+  --color-accent-soft: #dff0eb;
+  --color-marker: #fbe78a;
+  --color-danger: #a3302a;
+  --color-danger-soft: #fbe9e5;
+  --color-success: #1a6a44;
+  --color-success-soft: #dff2e6;
+  --color-warning: #7a4f00;
+  --color-warning-soft: #fbf0d2;
+  --color-ink: #08352f;
+  --color-ink-soft: #0c5249;
+  --color-on-ink: #ffffff;
+  --color-on-ink-muted: #cfe5df;
+  --color-marker-strong: #f6d743;
+
+  // Fonts that come with the system, so nothing is loaded from an external service.
+  --font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-serif: 'Iowan Old Style', 'Palatino Linotype', Palatino, 'Book Antiqua', Georgia, serif;
+
+  --radius-sm: 0.5rem;
+  --radius-md: 0.75rem;
+  --radius-lg: 1.125rem;
+  --shadow-sm: 0 1px 2px rgb(60 50 30 / 6%);
+  --shadow-md: 0 1px 2px rgb(60 50 30 / 5%), 0 12px 28px -12px rgb(60 50 30 / 18%);
 }
 
 html {
   color-scheme: light;
   @include mat.theme(
     (
-      color: mat.$azure-palette,
-      // The system font, so no font files or external font service are needed.
+      color: mat.$cyan-palette,
       typography: (system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif),
       density: 0,
+    )
+  );
+  @include mat.theme-overrides(
+    (
+      primary: var(--color-accent),
+      on-primary: #ffffff,
+      primary-container: var(--color-accent-soft),
+      on-primary-container: var(--color-accent-strong),
+      secondary-container: var(--color-accent-soft),
+      on-secondary-container: var(--color-accent-strong),
+      surface: var(--color-surface),
+      surface-container-lowest: var(--color-surface),
+      surface-container-low: var(--color-surface),
+      surface-container: var(--color-surface),
+      surface-container-high: var(--color-surface),
+      surface-container-highest: var(--color-surface-sunken),
+      on-surface: var(--color-text),
+      on-surface-variant: var(--color-text-muted),
+      outline: var(--color-border-strong),
+      outline-variant: var(--color-border),
+      error: var(--color-danger),
+    )
+  );
+  @include mat.button-overrides(
+    (
+      filled-container-shape: 0.625rem,
+      outlined-container-shape: 0.625rem,
+      text-container-shape: 0.625rem,
+      tonal-container-shape: 0.625rem,
+    )
+  );
+  @include mat.form-field-overrides(
+    (
+      outlined-container-shape: 0.625rem,
+    )
+  );
+  @include mat.dialog-overrides(
+    (
+      container-shape: var(--radius-lg),
+      subhead-font: var(--font-serif),
+      subhead-weight: 600,
+      subhead-size: 1.375rem,
     )
   );
 }
@@ -34,13 +103,82 @@ body {
 }
 
 body {
+  // A full-bleed section is as wide as the window, including the scrollbar. Clipping that extra
+  // width avoids a sideways scroll, and unlike "hidden" it does not break sticky elements.
+  overflow-x: clip;
   background: var(--color-background);
   color: var(--color-text);
-  font-family:
-    system-ui,
-    -apple-system,
-    'Segoe UI',
-    Roboto,
-    sans-serif;
-  line-height: 1.5;
+  font-family: var(--font-sans);
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3 {
+  color: var(--color-text);
+  font-family: var(--font-serif);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+::selection {
+  background: var(--color-marker);
+  color: var(--color-text);
+}
+
+a:focus-visible,
+button:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+// Reaches both edges of the window from inside the centred column of a page.
+.full-bleed {
+  margin-inline: calc(50% - 50vw);
+}
+
+// Touches the navigation bar, cancelling the space at the top of the page.
+.page-top {
+  margin-top: calc(-1 * var(--page-padding-top));
+}
+
+// Buttons on a dark background: the highlighter yellow for the main action, and white for the others.
+.on-ink {
+  --mat-button-filled-container-color: var(--color-marker-strong);
+  --mat-button-filled-label-text-color: var(--color-ink);
+  --mat-button-filled-state-layer-color: var(--color-ink);
+  --mat-button-filled-ripple-color: rgb(8 53 47 / 12%);
+  --mat-button-outlined-label-text-color: var(--color-on-ink);
+  --mat-button-outlined-outline-color: rgb(255 255 255 / 50%);
+  --mat-button-outlined-state-layer-color: var(--color-on-ink);
+  --mat-button-outlined-ripple-color: rgb(255 255 255 / 16%);
+  --mat-button-text-label-text-color: var(--color-on-ink);
+  --mat-button-text-state-layer-color: var(--color-on-ink);
+  --mat-button-text-ripple-color: rgb(255 255 255 / 16%);
+
+  a:focus-visible,
+  button:focus-visible {
+    outline-color: var(--color-marker-strong);
+  }
+}
+
+// Space between an icon and the text of a button.
+.button-icon {
+  margin-inline-end: 0.375rem;
+}
+
+.button-icon-end {
+  margin-inline-start: 0.375rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

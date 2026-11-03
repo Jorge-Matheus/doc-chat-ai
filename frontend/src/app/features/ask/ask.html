@@ -1,5 +1,8 @@
 <aside class="history" aria-label="Your conversations">
-  <a matButton="outlined" routerLink="/ask" data-testid="new-conversation">New conversation</a>
+  <a matButton="filled" class="new-conversation" routerLink="/ask" data-testid="new-conversation">
+    <app-icon name="plus" class="button-icon" />
+    New conversation
+  </a>
 
   @if (historyLoadFailed() && history().length === 0) {
     <p class="message-error" data-testid="history-error">Your conversations could not be loaded.</p>
@@ -44,16 +47,41 @@
       <button
         matButton
         type="button"
+        class="delete"
         data-testid="delete-conversation"
         (click)="confirmDeleteConversation()"
       >
+        <app-icon name="trash" class="button-icon" />
         Delete
       </button>
     }
   </div>
 
+  @if (currentId() === null && pending() === null) {
+    <div class="intro" data-testid="ask-intro">
+      <p class="lead">Ask in your own words. Every answer cites the pages it came from.</p>
+      <ul class="tips">
+        <li>
+          <span class="tip-icon"><app-icon name="chat" /></span>
+          <strong>Follow up naturally</strong>
+          <span>A question like "and the penalty?" understands the conversation.</span>
+        </li>
+        <li>
+          <span class="tip-icon"><app-icon name="highlight" /></span>
+          <strong>Check the source</strong>
+          <span>Select a citation to see the passage marked on its page.</span>
+        </li>
+        <li>
+          <span class="tip-icon"><app-icon name="search" /></span>
+          <strong>Choose where to look</strong>
+          <span>Search all your documents, or just one of them.</span>
+        </li>
+      </ul>
+    </div>
+  }
+
   @if (loadingConversation()) {
-    <p data-testid="conversation-loading">Loading the conversation...</p>
+    <p class="empty" data-testid="conversation-loading">Loading the conversation...</p>
   }
 
   @if (conversationLoadError(); as message) {
@@ -73,17 +101,22 @@
         @if (asked.conversationId === currentId()) {
           <div #pendingQuestion class="pending" data-testid="pending">
             <p class="question">{{ asked.question }}</p>
-            <mat-progress-bar mode="indeterminate" aria-label="Preparing the answer" />
-            <p class="hint">
-              This runs on your computer. Answers usually take seconds, but the first one after a
-              while can take a minute or two.
-            </p>
+            <div class="thinking" role="status" aria-label="Preparing the answer">
+              <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>
+              <p>
+                This runs on your computer. Answers usually take seconds, but the first one after a
+                while can take a minute or two.
+              </p>
+            </div>
           </div>
         }
       }
 
       @if (error(); as message) {
-        <p class="message-error" role="alert" data-testid="ask-error">{{ message }}</p>
+        <p class="message-error ask-error" role="alert" data-testid="ask-error">
+          <app-icon name="alert" />
+          <span>{{ message }}</span>
+        </p>
       }
     </div>
 
@@ -92,39 +125,55 @@
         Your documents could not be loaded. Reload the page to try again.
       </p>
     } @else if (loadingDocuments()) {
-      <p data-testid="loading">Loading your documents...</p>
+      <p class="empty" data-testid="loading">Loading your documents...</p>
     } @else if (readyDocuments().length === 0) {
-      <p class="empty" data-testid="no-documents">
+      <p class="no-documents" data-testid="no-documents">
         You have no documents ready yet. <a routerLink="/documents">Upload a PDF</a> to start asking.
       </p>
     } @else {
-      <form [formGroup]="form" (ngSubmit)="submit()" novalidate>
-        <mat-form-field appearance="outline" subscriptSizing="dynamic">
-          <mat-label>Search in</mat-label>
-          <mat-select formControlName="documentId" data-testid="scope">
-            <mat-option value="">All documents</mat-option>
-            @for (document of readyDocuments(); track document.id) {
-              <mat-option [value]="document.id">{{ document.filename }}</mat-option>
+      <form
+        class="composer"
+        [class.invalid]="missingQuestion()"
+        [formGroup]="form"
+        (ngSubmit)="submit()"
+        novalidate
+      >
+        <textarea
+          rows="2"
+          formControlName="question"
+          data-testid="question"
+          [attr.aria-label]="questionLabel()"
+          [attr.placeholder]="questionLabel() + '...'"
+          [attr.maxlength]="maxQuestionLength"
+          [attr.aria-invalid]="missingQuestion()"
+          (keydown)="onQuestionKeydown($event)"
+        ></textarea>
+        @if (missingQuestion()) {
+          <p class="field-error" role="alert">Write your question first.</p>
+        }
+        <div class="composer-bar">
+          <div class="scope-label">
+            <span aria-hidden="true">Search in</span>
+            <mat-select
+              class="scope"
+              formControlName="documentId"
+              data-testid="scope"
+              aria-label="Search in"
+              [panelWidth]="null"
+            >
+              <mat-option value="">All documents</mat-option>
+              @for (document of readyDocuments(); track document.id) {
+                <mat-option [value]="document.id">{{ document.filename }}</mat-option>
+              }
+            </mat-select>
+          </div>
+          <button matButton="filled" type="submit" [disabled]="pending() !== null">
+            {{ pending() ? 'Reading your documents...' : 'Ask' }}
+            @if (!pending()) {
+              <app-icon name="send" class="button-icon-end" />
             }
-          </mat-select>
-        </mat-form-field>
-
-        <mat-form-field appearance="outline">
-          <mat-label>{{ turns().length > 0 ? 'Ask a follow-up question' : 'Your question' }}</mat-label>
-          <textarea
-            matInput
-            rows="2"
-            formControlName="question"
-            data-testid="question"
-            [attr.maxlength]="maxQuestionLength"
-            (keydown)="onQuestionKeydown($event)"
-          ></textarea>
-          <mat-error>Write your question first.</mat-error>
-        </mat-form-field>
-
-        <button matButton="filled" type="submit" [disabled]="pending() !== null">
-          {{ pending() ? 'Reading your documents...' : 'Ask' }}
-        </button>
+          </button>
+        </div>
       </form>
     }
   }

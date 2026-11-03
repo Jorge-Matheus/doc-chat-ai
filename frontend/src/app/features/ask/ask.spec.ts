@@ -173,6 +173,29 @@ describe('Ask', () => {
       expect(element().textContent).toContain('Write your question first.');
     });
 
+    it('removes the message about a blank question as soon as the user types', async () => {
+      await openNewConversation();
+      await askQuestion('   ');
+      expect(element().textContent).toContain('Write your question first.');
+
+      typeQuestion('What is');
+      await stable();
+
+      expect(element().textContent).not.toContain('Write your question first.');
+    });
+
+    it('shows the tips only until the conversation has something in it', async () => {
+      await openNewConversation();
+      expect(testId('ask-intro')).not.toBeNull();
+
+      await askQuestion('What is the notice?');
+      expect(testId('ask-intro')).toBeNull();
+
+      http.expectOne(CONVERSATIONS_URL).flush(aConversation());
+      await respondWithHistory([aSummary()]);
+      expect(testId('ask-intro')).toBeNull();
+    });
+
     it('asks about all documents by default and shows the question while waiting', async () => {
       await openNewConversation();
 

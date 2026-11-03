@@ -1,37 +1,203 @@
+:host {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  // Lets a page reach the navigation bar by cancelling this space.
+  --page-padding-top: 2.5rem;
+}
+
 .app-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--color-ink);
+  box-shadow: 0 2px 12px rgb(8 53 47 / 30%);
+  color: var(--color-on-ink);
+}
+
+.header-inner {
+  display: flex;
+  align-items: center;
   gap: 0.5rem;
-  padding: 0 1.5rem;
-  border-bottom: 1px solid var(--color-border);
-  background: var(--color-surface);
+  max-width: 76rem;
+  min-height: 4.25rem;
+  margin: 0 auto;
+  padding: 0.5rem 1.5rem;
 }
 
 .brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.625rem;
+  margin-right: 1.5rem;
+  border-radius: var(--radius-sm);
   color: inherit;
-  font-size: 1.125rem;
-  font-weight: 700;
   text-decoration: none;
+  --brand-tile: #15917f;
+}
+
+.brand-name {
+  font-family: var(--font-serif);
+  font-size: 1.25rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+
+.main-nav {
+  display: flex;
+  gap: 0.25rem;
+
+  a {
+    position: relative;
+    display: inline-flex;
+    gap: 0.5rem;
+    align-items: center;
+    padding: 0.5rem 0.875rem;
+    border-radius: var(--radius-sm);
+    color: var(--color-on-ink-muted);
+    font-size: 0.9375rem;
+    font-weight: 500;
+    text-decoration: none;
+    transition: background-color 120ms ease, color 120ms ease;
+
+    &:hover {
+      background: rgb(255 255 255 / 9%);
+      color: var(--color-on-ink);
+    }
+
+    // A stroke of highlighter under the current page.
+    &.active {
+      background: rgb(255 255 255 / 12%);
+      color: var(--color-on-ink);
+
+      &::after {
+        position: absolute;
+        right: 0.75rem;
+        bottom: 0.1875rem;
+        left: 0.75rem;
+        height: 0.1875rem;
+        border-radius: 999px;
+        background: var(--color-marker-strong);
+        content: '';
+      }
+    }
+  }
 }
 
 .spacer {
   flex: 1;
 }
 
+.account {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.avatar {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 2.125rem;
+  height: 2.125rem;
+  border-radius: 50%;
+  background: var(--color-marker-strong);
+  color: var(--color-ink);
+  font-size: 0.9375rem;
+  font-weight: 700;
+}
+
 .user-email {
   overflow: hidden;
-  color: var(--color-text-muted);
+  max-width: 16rem;
+  color: var(--color-on-ink-muted);
   font-size: 0.875rem;
-  font-weight: 400;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .app-main {
-  max-width: 48rem;
+  flex: 1;
+  width: 100%;
+  max-width: 76rem;
   margin: 0 auto;
-  padding: 2rem 1.5rem;
+  padding: var(--page-padding-top) 1.5rem 3.5rem;
 }
 
 .sign-out-error {
   margin: 0 0 1rem;
-  color: #991b1b;
+  color: var(--color-danger);
+}
+
+.app-footer {
+  background: var(--color-ink);
+  color: var(--color-on-ink);
+}
+
+.footer-inner {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 2rem;
+  align-items: center;
+  justify-content: space-between;
+  max-width: 76rem;
+  margin: 0 auto;
+  padding: 1.25rem 1.5rem;
+
+  p {
+    margin: 0;
+    color: var(--color-on-ink-muted);
+    font-size: 0.875rem;
+  }
+}
+
+@media (max-width: 48rem) {
+  :host {
+    --page-padding-top: 1.5rem;
+  }
+
+  .app-header {
+    position: static;
+  }
+
+  .header-inner {
+    flex-wrap: wrap;
+    padding-inline: 1rem;
+  }
+
+  .brand {
+    margin-right: 0;
+  }
+
+  .main-nav {
+    order: 3;
+    width: 100%;
+
+    a {
+      flex: 1;
+      justify-content: center;
+    }
+  }
+
+  .user-email {
+    display: none;
+  }
+
+  .app-main {
+    padding-inline: 1rem;
+    padding-bottom: 2rem;
+  }
+
+  .footer-inner {
+    padding-inline: 1rem;
+  }
+}
+
+// There is no room for it next to the name. The home and sign-in pages have their own link.
+@media (max-width: 30rem) {
+  .header-cta {
+    display: none;
+  }
 }

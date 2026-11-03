@@ -5,6 +5,7 @@ import {
   ElementRef,
   Injector,
   afterNextRender,
+  computed,
   inject,
   signal,
   viewChild,
@@ -20,9 +21,6 @@ import {
 } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { MatDialog } from '@angular/material/dialog';
-import { MatFormFieldModule } from '@angular/material/form-field';
-import { MatInputModule } from '@angular/material/input';
-import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { MatSelectModule } from '@angular/material/select';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { catchError, distinctUntilChanged, filter, map, of, Subject, switchMap } from 'rxjs';
@@ -37,6 +35,7 @@ import { UserDocument } from '../../core/documents/document.model';
 import { DocumentService } from '../../core/documents/document.service';
 import { errorMessage } from '../../core/http/error-message';
 import { ConfirmDialog, ConfirmDialogData } from '../../core/ui/confirm-dialog';
+import { Icon } from '../../core/ui/icon';
 import { SourceViewerData, SourceViewerDialog } from './source-viewer-dialog';
 import { TurnView } from './turn-view';
 
@@ -58,10 +57,8 @@ interface PendingQuestion {
     ReactiveFormsModule,
     RouterLink,
     MatButtonModule,
-    MatFormFieldModule,
-    MatInputModule,
-    MatProgressBarModule,
     MatSelectModule,
+    Icon,
     TurnView,
   ],
   templateUrl: './ask.html',
@@ -105,6 +102,10 @@ export class Ask {
 
   protected readonly pending = signal<PendingQuestion | null>(null);
   protected readonly error = signal<string | null>(null);
+  protected readonly missingQuestion = signal(false);
+  protected readonly questionLabel = computed(() =>
+    this.turns().length > 0 ? 'Ask a follow-up question' : 'Ask a question about your documents',
+  );
 
   constructor() {
     inject(DocumentService)
@@ -141,12 +142,16 @@ export class Ask {
       )
       .subscribe((id) => this.show(id));
 
+    this.form.controls.question.valueChanges
+      .pipe(takeUntilDestroyed())
+      .subscribe(() => this.missingQuestion.set(false));
+
     this.loadOlderConversations();
   }
 
   protected submit(): void {
     if (this.form.invalid) {
-      this.form.markAllAsTouched();
+      this.missingQuestion.set(true);
       return;
     }
     if (this.pending()) {
@@ -194,8 +199,10 @@ export class Ask {
       return;
     }
     this.dialog.open<SourceViewerDialog, SourceViewerData>(SourceViewerDialog, {
-      width: '48rem',
+      width: '52rem',
       maxWidth: '95vw',
+      // Focus on the first button would light it up, as if it were the suggested action.
+      autoFocus: 'dialog',
       data: {
         documentId: citation.documentId,
         filename: citation.filename,
@@ -354,7 +361,6 @@ export class Ask {
       });
   }
 
-  /** Also clears the "submitted" state, which would otherwise show an error on the empty field. */
   private resetQuestion(question: string): void {
     this.formDirective()?.resetForm({
       documentId: this.form.controls.documentId.value,

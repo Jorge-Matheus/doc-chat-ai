@@ -270,6 +270,7 @@ This version is meant to run on your own machine and **must not be exposed publi
 - Passages never cross a page, so a sentence spanning two pages is cut in two.
 - Understanding a follow-up uses the model, which can misread it, and the answer is then about what it searched for. The interface shows that as "Searched for". In tests on short documents, 62 of 69 follow-ups were answered correctly, and 5 of the 7 misses were the model refusing after a correct rewrite.
 - The model sometimes says "not found" for a fact that needs a small inference, such as reading "Curitiba, Paraná" as a city and its state. This is safe, but it is a miss.
+- A question over all documents can combine passages from several of them, each with its own citation, even when it was meant for one. Choosing the document in "Search in" avoids that.
 - The documents chosen in "Search in" are not stored, so reopening a conversation goes back to all documents.
 - Conversations can be listed, opened and deleted, but not renamed or searched.
 - The source viewer shows extracted text, which loses tables and layout. The original PDF is one click away. Opening it at the cited page depends on the browser's PDF reader, and was confirmed only in Microsoft Edge.

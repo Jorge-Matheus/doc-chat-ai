@@ -21,7 +21,7 @@ export interface ConfirmDialogData {
     </mat-dialog-content>
     <mat-dialog-actions align="end">
       <button matButton type="button" [mat-dialog-close]="false">Cancel</button>
-      <button matButton="filled" type="button" [mat-dialog-close]="true">Delete</button>
+      <button matButton="filled" type="button" class="danger" [mat-dialog-close]="true">Delete</button>
     </mat-dialog-actions>
   `,
   styles: `
@@ -32,6 +32,10 @@ export interface ConfirmDialogData {
     .subject {
       margin-bottom: 0.5rem;
       overflow-wrap: anywhere;
+    }
+
+    .danger {
+      --mat-button-filled-container-color: var(--color-danger);
     }
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,

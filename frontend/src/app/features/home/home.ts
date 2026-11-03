@@ -5,6 +5,8 @@ import { RouterLink } from '@angular/router';
 import { AuthService } from '../../core/auth/auth.service';
 import { ComponentStatus, SystemStatus } from '../../core/system/system-status.model';
 import { SystemStatusService } from '../../core/system/system-status.service';
+import { Icon } from '../../core/ui/icon';
+import { Showcase } from './showcase';
 
 type StatusView =
   | { readonly state: 'loading' }
@@ -18,7 +20,7 @@ interface StatusRow {
 
 @Component({
   selector: 'app-home',
-  imports: [MatButtonModule, RouterLink],
+  imports: [MatButtonModule, RouterLink, Icon, Showcase],
   templateUrl: './home.html',
   styleUrl: './home.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,

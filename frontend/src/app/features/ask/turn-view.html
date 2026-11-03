@@ -1,64 +1,73 @@
-<p class="question" data-testid="turn-question">{{ turn().question }}</p>
-
-@if (turn().interpretedQuestion; as interpreted) {
-  <p class="interpreted" data-testid="interpreted">Searched for: {{ interpreted }}</p>
-}
+<div class="asked">
+  <p class="question" data-testid="turn-question">{{ turn().question }}</p>
+  @if (turn().interpretedQuestion; as interpreted) {
+    <p class="interpreted" data-testid="interpreted">
+      <app-icon name="search" />
+      <span>Searched for: {{ interpreted }}</span>
+    </p>
+  }
+</div>
 
 @if (turn().answered) {
-  <div class="answer" data-testid="answer">
-    <!-- Bound with textContent because interpolation would add spaces around the citations. -->
-    @for (part of parts(); track $index) {
-      @if (part.citation; as citation) {
-        @if (citation.documentId) {
-          <button
-            type="button"
-            class="marker"
-            data-testid="marker"
-            [attr.aria-label]="
-              'Source ' + citation.number + ': ' + citation.filename + ', page ' + citation.pageNumber
-            "
-            [textContent]="'[' + citation.number + ']'"
-            (click)="sourceOpened.emit(citation)"
-          ></button>
-        } @else {
-          <span [textContent]="'[' + citation.number + ']'"></span>
-        }
-      } @else {
-        <span [textContent]="part.text"></span>
-      }
-    }
-  </div>
-
-  <h3>Sources</h3>
-  <ol class="citations">
-    @for (citation of turn().citations; track citation.number) {
-      <li class="citation" data-testid="citation">
-        <div class="citation-title">
-          <span class="citation-number">[{{ citation.number }}]</span>
-          <span class="filename">{{ citation.filename }}</span>
-          <span class="page">page {{ citation.pageNumber }}</span>
+  <article class="answer-card">
+    <div class="answer" data-testid="answer">
+      <!-- Bound with textContent because interpolation would add spaces around the citations. -->
+      @for (part of parts(); track $index) {
+        @if (part.citation; as citation) {
           @if (citation.documentId) {
             <button
-              matButton
               type="button"
-              class="view-page"
-              data-testid="view-page"
+              class="marker"
+              data-testid="marker"
+              [attr.aria-label]="
+                'Source ' + citation.number + ': ' + citation.filename + ', page ' + citation.pageNumber
+              "
+              [textContent]="'[' + citation.number + ']'"
               (click)="sourceOpened.emit(citation)"
-            >
-              View page
-            </button>
+            ></button>
           } @else {
-            <span class="deleted" data-testid="source-deleted">Document deleted</span>
+            <span class="marker marker-deleted" [textContent]="'[' + citation.number + ']'"></span>
           }
-        </div>
-        @if (citation.excerpt; as excerpt) {
-          <blockquote>{{ excerpt }}</blockquote>
+        } @else {
+          <span [textContent]="part.text"></span>
         }
-      </li>
-    }
-  </ol>
+      }
+    </div>
+
+    <div class="sources">
+      <h3>Sources</h3>
+      <ol class="citations">
+        @for (citation of turn().citations; track citation.number) {
+          <li class="citation" data-testid="citation">
+            <div class="citation-title">
+              <span class="citation-number">[{{ citation.number }}]</span>
+              <span class="filename">{{ citation.filename }}</span>
+              <span class="page">page {{ citation.pageNumber }}</span>
+              @if (citation.documentId) {
+                <button
+                  matButton
+                  type="button"
+                  class="view-page"
+                  data-testid="view-page"
+                  (click)="sourceOpened.emit(citation)"
+                >
+                  View page
+                </button>
+              } @else {
+                <span class="deleted" data-testid="source-deleted">Document deleted</span>
+              }
+            </div>
+            @if (citation.excerpt; as excerpt) {
+              <blockquote>{{ excerpt }}</blockquote>
+            }
+          </li>
+        }
+      </ol>
+    </div>
+  </article>
 } @else {
   <p class="not-found" data-testid="not-found">
-    The answer to this question was not found in your documents.
+    <app-icon name="question" />
+    <span>The answer to this question was not found in your documents.</span>
   </p>
 }

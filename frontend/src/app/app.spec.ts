@@ -58,6 +58,16 @@ describe('App', () => {
     expect(element().querySelector('header a[href="/login"]')).toBeNull();
   });
 
+  it('leads a signed-in user to the questions and the documents, and shows who is signed in', async () => {
+    await signInAs();
+
+    const links = Array.from(element().querySelectorAll('header nav a')).map((link) =>
+      link.getAttribute('href'),
+    );
+    expect(links).toEqual(['/ask', '/documents']);
+    expect(element().querySelector('.avatar')?.textContent?.trim()).toBe('U');
+  });
+
   it('tells the user when signing out fails', async () => {
     await signInAs();
     vi.spyOn(auth, 'signOut').mockReturnValue(throwError(() => new Error('offline')));

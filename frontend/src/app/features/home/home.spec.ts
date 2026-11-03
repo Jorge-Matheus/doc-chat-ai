@@ -98,10 +98,16 @@ describe('Home', () => {
     expect(rows()).toEqual([]);
   });
 
+  it('includes the tour of the application', async () => {
+    await respondWith({ status: 'UP', database: 'UP', vectorExtension: 'UP', ai: 'UP' });
+
+    expect(element().querySelector('app-showcase img')).not.toBeNull();
+  });
+
   it('recovers when the user tries again', async () => {
     await failWith(503);
 
-    element().querySelector('button')?.click();
+    element().querySelector<HTMLButtonElement>('.status button')?.click();
     await fixture.whenStable();
     expect(testId('status-loading')).not.toBeNull();
 

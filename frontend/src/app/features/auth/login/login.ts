@@ -8,10 +8,12 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { safeReturnUrl } from '../../../core/auth/auth.guards';
 import { AuthService } from '../../../core/auth/auth.service';
 import { errorMessage } from '../../../core/http/error-message';
+import { BrandMark } from '../../../core/ui/brand-mark';
+import { AuthAside } from '../auth-aside';
 
 @Component({
   selector: 'app-login',
-  imports: [ReactiveFormsModule, RouterLink, MatButtonModule, MatFormFieldModule, MatInputModule],
+  imports: [ReactiveFormsModule, RouterLink, MatButtonModule, MatFormFieldModule, MatInputModule, BrandMark, AuthAside],
   templateUrl: './login.html',
   styleUrl: '../auth-form.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
