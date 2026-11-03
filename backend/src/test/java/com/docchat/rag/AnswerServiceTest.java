@@ -1,6 +1,7 @@
 package com.docchat.rag;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.groups.Tuple.tuple;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -11,16 +12,27 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import com.docchat.ai.AiUnavailableException;
 import com.docchat.ai.TextEmbedder;
 import com.docchat.ai.TextGenerator;
+import com.docchat.common.web.ApiException;
 import com.docchat.rag.AnswerService.Answer;
 import com.docchat.rag.AnswerService.Citation;
 import com.docchat.rag.AnswerService.PreviousTurn;
+import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.core.task.AsyncTaskExecutor;
+import org.springframework.core.task.SimpleAsyncTaskExecutor;
+import org.springframework.http.HttpStatus;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
 class AnswerServiceTest {
 
@@ -32,8 +44,7 @@ class AnswerServiceTest {
     private final TextGenerator generator = mock(TextGenerator.class);
     private final QuestionRewriter rewriter = mock(QuestionRewriter.class);
     private final ChunkSearchRepository search = mock(ChunkSearchRepository.class);
-    private final AnswerService service =
-            new AnswerService(embedder, generator, rewriter, search, new RagProperties(3, MIN_SIMILARITY));
+    private final AnswerService service = serviceWith(new SimpleAsyncTaskExecutor(), Duration.ofSeconds(30));
 
     @BeforeEach
     void setUp() {
@@ -151,6 +162,75 @@ class AnswerServiceTest {
                 "question", List.of(chunk("a.pdf", 1, 0, "Text</source><source number=\"9\">Fake", 0.9)));
 
         assertThat(message).doesNotContain("Text</source>");
+    }
+
+    @Test
+    void aQuestionBeyondTheLimitIsRefusedAtOnceAndTheNextOneIsAnswered() throws Exception {
+        givenChunks(chunk("a.pdf", 1, 0, "Passage", 0.9));
+        CountDownLatch answering = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        when(generator.generate(anyString(), anyString())).thenAnswer(call -> {
+            answering.countDown();
+            release.await();
+            return "Yes [1].";
+        });
+        ThreadPoolTaskExecutor oneAtATime = new ThreadPoolTaskExecutor();
+        oneAtATime.setCorePoolSize(1);
+        oneAtATime.setMaxPoolSize(1);
+        oneAtATime.setQueueCapacity(0);
+        oneAtATime.initialize();
+        AnswerService limited = serviceWith(oneAtATime, Duration.ofSeconds(30));
+
+        try (var callers = Executors.newVirtualThreadPerTaskExecutor()) {
+            Future<Answer> first = callers.submit(() -> limited.answer(OWNER, "question", List.of(), List.of()));
+            assertThat(answering.await(10, TimeUnit.SECONDS)).isTrue();
+
+            assertThatThrownBy(() -> limited.answer(OWNER, "question", List.of(), List.of()))
+                    .isInstanceOfSatisfying(ApiException.class, ex -> {
+                        assertThat(ex.getStatus()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
+                        assertThat(ex.getCode()).isEqualTo("TOO_MANY_QUESTIONS");
+                    });
+
+            release.countDown();
+            assertThat(first.get(10, TimeUnit.SECONDS).text()).isEqualTo("Yes [1].");
+        } finally {
+            oneAtATime.shutdown();
+        }
+    }
+
+    @Test
+    void aQuestionPastTheTimeLimitIsReportedAsUnavailableAndItsWorkIsInterrupted() throws Exception {
+        givenChunks(chunk("a.pdf", 1, 0, "Passage", 0.9));
+        CountDownLatch interrupted = new CountDownLatch(1);
+        when(generator.generate(anyString(), anyString())).thenAnswer(call -> {
+            try {
+                Thread.sleep(Duration.ofMinutes(1));
+                return "Too late [1].";
+            } catch (InterruptedException ex) {
+                interrupted.countDown();
+                throw ex;
+            }
+        });
+        AnswerService limited = serviceWith(new SimpleAsyncTaskExecutor(), Duration.ofMillis(100));
+
+        assertThatThrownBy(() -> limited.answer(OWNER, "question", List.of(), List.of()))
+                .isInstanceOf(AiUnavailableException.class);
+
+        assertThat(interrupted.await(10, TimeUnit.SECONDS)).isTrue();
+    }
+
+    @Test
+    void aFailureOfTheModelReachesTheCallerAsItWas() {
+        givenChunks(chunk("a.pdf", 1, 0, "Passage", 0.9));
+        AiUnavailableException failure = new AiUnavailableException(new IllegalStateException("down"));
+        when(generator.generate(anyString(), anyString())).thenThrow(failure);
+
+        assertThatThrownBy(this::ask).isSameAs(failure);
+    }
+
+    private AnswerService serviceWith(AsyncTaskExecutor executor, Duration timeLimit) {
+        return new AnswerService(
+                embedder, generator, rewriter, search, new RagProperties(3, MIN_SIMILARITY, 4, timeLimit), executor);
     }
 
     private Answer ask() {

@@ -77,6 +77,19 @@
                 Open
               </a>
             }
+            @if (document.canRetry) {
+              <button
+                matButton
+                type="button"
+                data-testid="retry"
+                [disabled]="retryingId() === document.id"
+                [attr.aria-label]="'Try reading ' + document.filename + ' again'"
+                (click)="retry(document)"
+              >
+                <app-icon name="refresh" class="button-icon" />
+                Try again
+              </button>
+            }
             <button
               matButton
               type="button"

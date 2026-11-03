@@ -11,7 +11,7 @@ import org.junit.jupiter.api.Test;
 
 class PdfTextExtractorTest {
 
-    private final PdfTextExtractor extractor = new PdfTextExtractor(new IngestionProperties(1, 0, 5));
+    private final PdfTextExtractor extractor = new PdfTextExtractor(new IngestionProperties(1, 0, 5, java.time.Duration.ofSeconds(30)));
 
     @Test
     void extractsTheTextOfEachPageInOrder() {

@@ -12,6 +12,7 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -70,9 +71,38 @@ class DocumentControllerTest {
                 .andExpect(jsonPath("$.sizeBytes").value(1))
                 .andExpect(jsonPath("$.status").value("PROCESSING"))
                 .andExpect(jsonPath("$.failureReason").isEmpty())
+                .andExpect(jsonPath("$.canRetry").value(false))
                 .andExpect(jsonPath("$.pageCount").isEmpty())
                 .andExpect(jsonPath("$.createdAt").value("2026-11-03T12:00:00Z"))
                 .andExpect(jsonPath("$.ownerId").doesNotExist());
+    }
+
+    @Test
+    void aDocumentSaysWhetherItsFailureCanBeTriedAgain() throws Exception {
+        UUID temporary = UUID.randomUUID();
+        UUID permanent = UUID.randomUUID();
+        when(service.get(temporary, USER_ID)).thenReturn(failed(temporary, DocumentFailureReason.EMBEDDING_UNAVAILABLE));
+        when(service.get(permanent, USER_ID)).thenReturn(failed(permanent, DocumentFailureReason.PROTECTED));
+
+        mockMvc.perform(get("/api/documents/" + temporary).with(user(PRINCIPAL)))
+                .andExpect(jsonPath("$.canRetry").value(true));
+        mockMvc.perform(get("/api/documents/" + permanent).with(user(PRINCIPAL)))
+                .andExpect(jsonPath("$.canRetry").value(false));
+    }
+
+    @Test
+    void retryAnswersAccepted() throws Exception {
+        UUID id = UUID.randomUUID();
+        when(service.retry(id, USER_ID)).thenReturn(new Document(
+                id, USER_ID, "a.pdf", 1, DocumentStatus.PROCESSING, null, null, Instant.parse("2026-11-03T12:00:00Z")));
+
+        mockMvc.perform(post("/api/documents/" + id + "/retry").with(user(PRINCIPAL)).with(csrf()))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.status").value("PROCESSING"));
+    }
+
+    private static Document failed(UUID id, DocumentFailureReason reason) {
+        return new Document(id, USER_ID, "a.pdf", 1, DocumentStatus.FAILED, reason, null, Instant.now());
     }
 
     @Test

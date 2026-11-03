@@ -85,12 +85,23 @@ docchat:
   storage:
     # A relative path is resolved against the working directory.
     directory: ${DOCCHAT_STORAGE_DIR:storage}
+  documents:
+    # Room for 200 files of the largest size accepted.
+    storage-per-user: 5GB
   ingestion:
     workers: 2
     queue-capacity: 100
     max-pages: 2000
+    # Far above what was measured on an RTX 3060: 110 seconds for 500 pages.
+    max-processing-time: 30m
+    # How often to look for documents left without a worker, such as during a database outage.
+    resume-interval: PT1M
   rag:
     # How many passages the model reads, and how similar to the question they must be.
     top-k: 6
     # Measured with bge-m3: related questions scored 0.66 or more, and unrelated ones about 0.26.
     min-similarity: 0.35
+    # The GPU works on one at a time, so this only limits how many can be waiting for it.
+    max-concurrent-questions: 4
+    # Keep below proxy_read_timeout in frontend/nginx.conf.
+    question-time-limit: 170s

@@ -178,6 +178,29 @@ class QuestionFlowIT {
     }
 
     @Test
+    void aDocumentThatFailedBecauseOfTheModelWorksWhenTriedAgain() {
+        embeddingModel.setFailing(true);
+        HttpResponse<String> upload = alice.upload("contract.pdf", TestPdfs.withPages("The notice period is sixty days"));
+        String id = JsonPath.read(upload.body(), "$.id");
+        assertThat((Boolean) JsonPath.read(awaitFinished(alice, id), "$.canRetry")).isTrue();
+        embeddingModel.setFailing(false);
+
+        ApiClient bob = signedInUser();
+        assertThat(bob.send("POST", "/api/documents/" + id + "/retry", null).statusCode()).isEqualTo(404);
+        assertThat((String) JsonPath.read(alice.get("/api/documents/" + id).body(), "$.status")).isEqualTo("FAILED");
+
+        HttpResponse<String> retry = alice.send("POST", "/api/documents/" + id + "/retry", null);
+
+        assertThat(retry.statusCode()).isEqualTo(202);
+        String document = awaitFinished(alice, id);
+        assertThat((String) JsonPath.read(document, "$.status")).isEqualTo("READY");
+        assertThat((String) JsonPath.read(document, "$.failureReason")).isNull();
+        assertThat(countChunks(id)).isEqualTo(1);
+        assertThat((Boolean) JsonPath.read(ask(alice, "What is the notice period?").body(), "$.turns[0].answered"))
+                .isTrue();
+    }
+
+    @Test
     void deletingADocumentRemovesItsPassagesFromSearch() {
         String id = upload(alice, "contract.pdf", "Termination requires sixty days notice");
         assertThat(countChunks(id)).isPositive();

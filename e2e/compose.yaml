@@ -1,0 +1,83 @@
+# The stack the browser tests run against. It is separate from the one in the repository root, with
+# its own project name, network and volumes, so tests can stop services and delete everything
+# without touching real data. The ports differ too, so both can run at the same time.
+name: docchat-e2e
+
+services:
+  db:
+    # Keep in sync with compose.yaml in the repository root.
+    image: pgvector/pgvector:pg18-trixie
+    environment:
+      POSTGRES_DB: docchat
+      POSTGRES_USER: docchat
+      POSTGRES_PASSWORD: only-for-browser-tests
+    volumes:
+      - db-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U docchat -d docchat"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  # Not started when the tests use the real models.
+  fake-ollama:
+    image: node:26-alpine
+    command: ["node", "/app/server.mjs"]
+    environment:
+      # Keep in sync with the model names in compose.yaml in the repository root.
+      MODELS: qwen3.5:9b,bge-m3:latest
+    volumes:
+      - ./fake-ollama/server.mjs:/app/server.mjs:ro
+    ports:
+      # Tests use this port to make the model slow or broken.
+      - "127.0.0.1:11535:11434"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:11434/api/tags').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  backend:
+    build: ../backend
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      DOCCHAT_DB_URL: jdbc:postgresql://db:5432/docchat
+      DOCCHAT_DB_USERNAME: docchat
+      DOCCHAT_DB_PASSWORD: only-for-browser-tests
+      DOCCHAT_STORAGE_DIR: /var/lib/docchat/storage
+      OLLAMA_BASE_URL: ${E2E_OLLAMA_URL:-http://fake-ollama:11434}
+      # Low limits, so tests of what happens at a limit do not have to wait long to reach it.
+      DOCCHAT_RAG_QUESTION_TIME_LIMIT: ${E2E_QUESTION_TIME_LIMIT:-8s}
+      DOCCHAT_RAG_MAX_CONCURRENT_QUESTIONS: 1
+      DOCCHAT_INGESTION_MAX_PROCESSING_TIME: ${E2E_PROCESSING_TIME_LIMIT:-12s}
+      DOCCHAT_INGESTION_RESUME_INTERVAL: PT3S
+      JAVA_TOOL_OPTIONS: -Xmx768m
+    volumes:
+      - document-files:/var/lib/docchat/storage
+    extra_hosts:
+      # How the backend reaches the real models of the other stack.
+      - "host.docker.internal:host-gateway"
+    ports:
+      # Actuator is not forwarded by the frontend, and tests check it.
+      - "127.0.0.1:18080:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/actuator/health/readiness"]
+      interval: 2s
+      timeout: 5s
+      retries: 60
+      start_period: 10s
+
+  frontend:
+    build: ../frontend
+    ports:
+      - "127.0.0.1:4300:8080"
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  db-data:
+  document-files:

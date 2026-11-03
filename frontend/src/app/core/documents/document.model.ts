@@ -10,6 +10,7 @@ export type DocumentFailureReason =
   | 'TOO_MANY_PAGES'
   | 'PROCESSING_UNAVAILABLE'
   | 'EMBEDDING_UNAVAILABLE'
+  | 'PROCESSING_TIMED_OUT'
   | 'INTERNAL_ERROR';
 
 /** Mirrors DocumentResponse in the backend. Named to avoid the browser's global Document type. */
@@ -19,6 +20,8 @@ export interface UserDocument {
   readonly sizeBytes: number;
   readonly status: DocumentStatus;
   readonly failureReason: DocumentFailureReason | null;
+  /** The file is not the problem, so processing it again can work. */
+  readonly canRetry: boolean;
   readonly pageCount: number | null;
   readonly createdAt: string;
 }

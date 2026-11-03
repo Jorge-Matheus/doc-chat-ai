@@ -16,6 +16,7 @@ function aDocument(overrides: Partial<UserDocument> = {}): UserDocument {
     sizeBytes: 2 * 1024 * 1024,
     status: 'READY',
     failureReason: null,
+    canRetry: false,
     pageCount: 12,
     createdAt: '2026-11-03T12:00:00Z',
     ...overrides,
@@ -122,6 +123,88 @@ describe('Documents', () => {
 
     vi.advanceTimersByTime(POLL_INTERVAL_MS * 3);
     http.expectNone(FIRST_PAGE);
+  });
+
+  it('keeps checking after a check fails, and recovers by itself', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    http.expectOne(FIRST_PAGE).flush({
+      items: [aDocument({ status: 'PROCESSING', pageCount: null })],
+      page: 0,
+      size: 10,
+      totalItems: 1,
+    });
+
+    vi.advanceTimersByTime(POLL_INTERVAL_MS);
+    http.expectOne(FIRST_PAGE).flush('unavailable', { status: 502, statusText: 'Bad Gateway' });
+    await fixture.whenStable();
+    expect(testId('load-error')).not.toBeNull();
+    expect(documentRows()[0]).toContain('Processing');
+
+    vi.advanceTimersByTime(POLL_INTERVAL_MS);
+    http.expectOne(FIRST_PAGE).flush({ items: [aDocument()], page: 0, size: 10, totalItems: 1 });
+    await fixture.whenStable();
+
+    expect(testId('load-error')).toBeNull();
+    expect(documentRows()[0]).toContain('Ready');
+  });
+
+  it('does not keep checking after a failure when nothing is processing', () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    http.expectOne(FIRST_PAGE).flush({ items: [aDocument()], page: 0, size: 10, totalItems: 1 });
+
+    (fixture.componentInstance as unknown as { load(): void }).load();
+    http.expectOne(FIRST_PAGE).flush('unavailable', { status: 502, statusText: 'Bad Gateway' });
+
+    vi.advanceTimersByTime(POLL_INTERVAL_MS * 3);
+    http.expectNone(FIRST_PAGE);
+  });
+
+  it('offers to try again only when the file is not the problem', async () => {
+    await respondWithList([
+      aDocument({ id: 'temporary', status: 'FAILED', failureReason: 'EMBEDDING_UNAVAILABLE', canRetry: true }),
+      aDocument({ id: 'permanent', status: 'FAILED', failureReason: 'PROTECTED', canRetry: false }),
+    ]);
+
+    expect(element().querySelectorAll('[data-testid="retry"]')).toHaveLength(1);
+    expect(documentRows()[0]).toContain('Try again');
+    expect(documentRows()[1]).not.toContain('Try again');
+  });
+
+  it('tries a document again and goes back to checking it', async () => {
+    const failed = aDocument({
+      status: 'FAILED',
+      failureReason: 'PROCESSING_TIMED_OUT',
+      canRetry: true,
+      pageCount: null,
+    });
+    await respondWithList([failed]);
+    expect(testId('document-failure')?.textContent).toContain('too long');
+
+    testId('retry')?.click();
+    await fixture.whenStable();
+    expect((testId('retry') as HTMLButtonElement).disabled).toBe(true);
+
+    const request = http.expectOne('/api/documents/doc-1/retry');
+    expect(request.request.method).toBe('POST');
+    request.flush({ ...failed, status: 'PROCESSING', failureReason: null, canRetry: false });
+    await respondWithList([aDocument({ status: 'PROCESSING', pageCount: null })]);
+
+    expect(testId('retry')).toBeNull();
+    expect(documentRows()[0]).toContain('Processing');
+  });
+
+  it('shows why a document could not be tried again', async () => {
+    await respondWithList([
+      aDocument({ status: 'FAILED', failureReason: 'INTERNAL_ERROR', canRetry: true, pageCount: null }),
+    ]);
+
+    testId('retry')?.click();
+    http
+      .expectOne('/api/documents/doc-1/retry')
+      .flush({ detail: 'Only a document that failed can be tried again.' }, { status: 409, statusText: 'Conflict' });
+    await respondWithList([aDocument()]);
+
+    expect(testId('action-error')?.textContent).toContain('Only a document that failed');
   });
 
   it('stops checking when the user leaves the page', () => {

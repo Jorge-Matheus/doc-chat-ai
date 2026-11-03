@@ -102,6 +102,15 @@ class DocumentController {
                 .body(new InputStreamResource(documentService.openFile(document.id())));
     }
 
+    @PostMapping("/{id}/retry")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    @Operation(
+            summary = "Process a failed document again",
+            description = "Only for a document with canRetry set, which failed for a reason unrelated to its file.")
+    DocumentResponse retry(@AuthenticationPrincipal AccountPrincipal principal, @PathVariable UUID id) {
+        return DocumentResponse.from(documentService.retry(id, principal.getId()));
+    }
+
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @Operation(summary = "Delete a document, its extracted text and its file")
@@ -115,6 +124,7 @@ class DocumentController {
             long sizeBytes,
             DocumentStatus status,
             DocumentFailureReason failureReason,
+            boolean canRetry,
             Integer pageCount,
             Instant createdAt) {
 
@@ -125,6 +135,7 @@ class DocumentController {
                     document.sizeBytes(),
                     document.status(),
                     document.failureReason(),
+                    document.failureReason() != null && document.failureReason().isTemporary(),
                     document.pageCount(),
                     document.createdAt());
         }

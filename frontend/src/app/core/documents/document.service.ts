@@ -19,6 +19,10 @@ export class DocumentService {
     return this.http.post<UserDocument>(DOCUMENTS_URL, form);
   }
 
+  retry(id: string): Observable<UserDocument> {
+    return this.http.post<UserDocument>(`${DOCUMENTS_URL}/${id}/retry`, null);
+  }
+
   delete(id: string): Observable<void> {
     return this.http.delete<void>(`${DOCUMENTS_URL}/${id}`);
   }

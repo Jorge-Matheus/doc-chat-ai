@@ -31,6 +31,17 @@ npm run lint
 npm run build
 ```
 
+Browser tests, from `e2e/`. They need Docker and Edge, and start and delete their own stack, which can run next to the main one.
+
+```bash
+npm ci
+npm test                                     # Everything, with a fake model. A few minutes.
+npm test -- tests/journey.spec.ts            # One file
+npm test -- -g 'clicking twice'              # By test name
+npm run test:real                            # Real models, through the main stack's ollama service
+npm run typecheck
+```
+
 Whole stack, from the repository root. Compose refuses to start until `POSTGRES_PASSWORD` is set in `.env`.
 
 ```bash
@@ -45,7 +56,7 @@ docker compose down -v       # Also DELETES the database, the uploaded files and
 
 **Modular monolith.** One Spring Boot application, packaged by business module under `com.docchat.<module>` ([ADR 0001](docs/adr/0001-modular-monolith.md)). Nothing enforces the boundaries except discipline. A package is created only when it has real code. Persistence uses `JdbcClient` with explicit SQL, not JPA.
 
-**Single origin.** The browser only talks to the Angular host, so the backend has no CORS configuration and frontend code calls relative URLs such as `/api/system/status`. `/api`, `/v3/api-docs` and `/swagger-ui` are forwarded by `proxy.conf.json` under `ng serve` and by `nginx.conf` in Docker. `/actuator` is not forwarded, so reach it on the backend port. `nginx.conf` deliberately sets `proxy_pass` through a variable, which makes nginx re-resolve the name and keeps the proxy working when the backend container is recreated with a new IP. Do not simplify it to a literal URL.
+**Single origin.** The browser only talks to the Angular host, so the backend has no CORS configuration and frontend code calls relative URLs such as `/api/system/status`. `/api`, `/v3/api-docs` and `/swagger-ui` are forwarded by `proxy.conf.json` under `ng serve` and by `nginx.conf` in Docker. `/actuator` is not forwarded, so reach it on the backend port. `nginx.conf` deliberately sets `proxy_pass` through a variable, which makes nginx re-resolve the name and keeps the proxy working when the backend container is recreated with a new IP. Do not simplify it to a literal URL. It also sends the Content Security Policy of the pages, which is why `inlineCritical` is off in `angular.json`: the inlined stylesheet loads through an inline handler that the policy blocks, and the application would have no styles.
 
 **Spring profiles.** `application.yml` has no datasource on purpose, so starting without a profile fails instead of connecting to an unintended database.
 - `dev`: backend on the host, database and Ollama in Compose. It reads `../.env` relative to the working directory, so start the backend from `backend/`.
@@ -55,9 +66,11 @@ docker compose down -v       # Also DELETES the database, the uploaded files and
 
 **Errors and correlation ids.** `CorrelationIdFilter` assigns an id to each request and puts it in the `X-Correlation-Id` response header and the logging MDC. `GlobalExceptionHandler` renders errors as RFC 9457 Problem Details. Its `createResponseEntity` override adds `code`, `timestamp` and `correlationId`, so a new `@ExceptionHandler` must return through `handleExceptionInternal` or those members are lost. Throw `ApiException` for expected failures; its message reaches the client. Security failures in the filter chain are routed to the same handler through `HandlerExceptionResolver`. Unexpected exceptions are logged and answered with a generic message, so internal details never reach the client.
 
-**Documents.** `DocumentService` stores the file, inserts a `PROCESSING` row and publishes `DocumentUploadedEvent`. `ingestion.DocumentProcessor` listens for it, so `document` does not depend on `ingestion`, and extracts the text on a bounded executor. `DocumentRepository.completeProcessing` updates the row before inserting pages, because that lock is what makes a concurrent delete safe. Rows still `PROCESSING` at startup are processed again. Every user-facing query filters by owner, and another user's document answers 404. Files are on the local disk ([ADR 0005](docs/adr/0005-local-file-storage.md)), with no abstraction over the storage on purpose.
+**Sessions during an outage.** Sessions live in the database, and the framework reads them on the way out of every request with a cookie, even if the route never asks. So `auth.SessionConfig` makes the status and health routes ignore the cookie, and `common.web.DatabaseUnavailableFilter`, placed before the session filter, renders what fails there as 503 `DATABASE_UNAVAILABLE`. A new route that must work without the database has to be added to `SessionConfig`.
 
-**RAG.** Local models through Ollama in Compose ([ADR 0007](docs/adr/0007-local-ai-with-ollama.md)). Spring AI is only the client: the `ai` module wraps `EmbeddingModel` and `ChatModel` and turns failures into `AiUnavailableException`. Its pgvector store is deliberately not used, because `document_chunks` keeps foreign keys to pages and documents, and `rag.ChunkSearchRepository` searches with SQL that always filters by owner. Passages never cross a page. `rag.AnswerService` sends numbered passages to the model, which never sees file names or page numbers, and `AnswerParser` keeps only citations of passages it was given. A reply with no valid citation counts as not found, so every answer shown traces back to a page. The wording in `AnswerPrompt` and `RewritePrompt` was chosen by testing variants against the real model, and small changes had surprising effects, so re-test with real models before changing them. Judge a rewriting prompt by the final answer, with real search: a wording that looked right on its own made answers worse.
+**Documents.** `DocumentService` stores the file, inserts a `PROCESSING` row and publishes `DocumentUploadedEvent`. `ingestion.DocumentProcessor` listens for it, so `document` does not depend on `ingestion`, and extracts the text on a bounded executor. `DocumentRepository.completeProcessing` updates the row before inserting pages, because that lock is what makes a concurrent delete safe. A worker runs each document on its own daemon thread and waits only up to the time limit, because a file can keep PDFBox busy in a way that an interruption does not stop. A document stays `PROCESSING` when the application is stopping or the database is unreachable, since neither says anything about the file, and `resumeInterruptedDocuments`, at startup and every minute, queues the rows no worker has. `DocumentFailureReason.isTemporary` decides what `POST /{id}/retry` accepts. Every user-facing query filters by owner, and another user's document answers 404. Files are on the local disk ([ADR 0005](docs/adr/0005-local-file-storage.md)), with no abstraction over the storage on purpose.
+
+**RAG.** Local models through Ollama in Compose ([ADR 0007](docs/adr/0007-local-ai-with-ollama.md)). Spring AI is only the client: the `ai` module wraps `EmbeddingModel` and `ChatModel` and turns failures into `AiUnavailableException`. Its pgvector store is deliberately not used, because `document_chunks` keeps foreign keys to pages and documents, and `rag.ChunkSearchRepository` searches with SQL that always filters by owner. Passages never cross a page. `rag.AnswerService` sends numbered passages to the model, which never sees file names or page numbers, and `AnswerParser` keeps only citations of passages it was given. A reply with no valid citation counts as not found, so every answer shown traces back to a page. `AnswerService` runs each question on `questionExecutor`, which has no queue and so refuses extra questions with 429, and it waits only up to `question-time-limit`, which covers all the calls to the models of one question. The wording in `AnswerPrompt` and `RewritePrompt` was chosen by testing variants against the real model, and small changes had surprising effects, so re-test with real models before changing them. Judge a rewriting prompt by the final answer, with real search: a wording that looked right on its own made answers worse.
 
 **Conversations.** `chat.ConversationService` asks `rag.AnswerService` and then stores the question and answer together, outside any transaction during the model's work, so a failed question leaves nothing ([ADR 0008](docs/adr/0008-conversations-and-follow-up-questions.md)). With earlier turns, `rag.QuestionRewriter` first makes the question stand alone, and the result is stored as `interpretedQuestion` and shown as "Searched for". A citation points at its passage through a foreign key instead of copying the text, so deleting a document clears `document_id` and removes the excerpt while the answer stays. Anything stored from a request or the model goes through `PgText.clean`.
 
@@ -72,21 +85,26 @@ docker compose down -v       # Also DELETES the database, the uploaded files and
 ## Tests
 
 - Surefire runs `*Test` classes and Failsafe runs `*IT` classes, so anything that needs Docker must be named `*IT`.
-- Tests run with no Spring profile, so a `@SpringBootTest` must bring its own database. Use `@Import(TestcontainersConfiguration.class)`, or the unreachable-database properties in `ApplicationWithoutDatabaseTest`, which proves the context loads without Docker. `src/test/resources/application-default.yml` applies to all of them.
+- Tests run with no Spring profile, so a `@SpringBootTest` must bring its own database. Use `@Import(TestcontainersConfiguration.class)`, or the unreachable-database properties in `ApplicationWithoutDatabaseTest` and `DatabaseOutageTest`, which need no Docker. `src/test/resources/application-default.yml` applies to all of them.
+- Spring Security's `with(user(...))` and `with(csrf())` in MockMvc change the filters for the rest of the context's life, and that can create sessions no real request would. To test anything about sessions, use real HTTP through `testsupport.ApiClient`, as `DatabaseOutageTest` does.
+- `SecurityRulesIT` reads the routes from the application, so a new route is covered by its rules about signing in, CSRF and other users' data. A new kind of resource must be added to `ownedId` there.
 - Tests never reach a real model: `application-default.yml` points Ollama at an unreachable address, and `testsupport.FakeAiConfiguration` provides predictable fakes. Integration tests import it with `TestcontainersConfiguration`. These fakes prove the plumbing, not the quality of answers, so changes to prompts, models or retrieval must also be run against the real models. `FakeChatModel` repeats the question when asked to rewrite it, unless `setRewriteReply` says otherwise, and `setDuringAnswer` runs something while the model works, such as a delete.
 - `AuthFlowIT`, `DocumentFlowIT`, `QuestionFlowIT` and `ConversationFlowIT` use real HTTP through `testsupport.ApiClient`, which acts like the browser with cookies and CSRF. `testsupport.TestPdfs` generates real PDF files.
 - A `@WebMvcTest` must `@Import(SecurityConfig.class)` to get the real rules. Requests then need `.with(user(new AccountPrincipal(...)))` and, if they change data, `.with(csrf())`.
 - Frontend specs run on Vitest with jsdom. They find elements through `data-testid` and fake the backend with `HttpTestingController`. `ask.spec.ts` uses `RouterTestingHarness` with the real `askUrl` matcher, because the page depends on route reuse. That fake does not exercise what a browser really sends, so check request bodies and headers explicitly, and run authentication changes in a real browser. A `URLSearchParams` login body passed every spec while the browser sent it as JSON.
+- Browser tests in `e2e/tests` use Playwright with the installed Edge, against the stack in `e2e/compose.yaml`, which has its own project name, volumes and ports, so stopping services and deleting everything never reaches real data ([ADR 0009](docs/adr/0009-browser-tests-on-an-isolated-stack.md)). `e2e/fake-ollama/server.mjs` replaces Ollama, and `fakeModel()` in `support/app.ts` makes it slow, broken or reply with chosen text. The stack sets low limits through environment variables, so a test of a limit takes seconds. Tests fail if the page throws or the CSP blocks something, so import `test` from `support/app`, not from Playwright. Use `whileStopped` to stop a service, because it always brings it back.
+- `e2e/real` runs against the real models and must be run after changing a prompt, a model or the search. Its checks only ask for what a correct answer must contain, because models vary between runs.
 - No test may call a paid API.
 - Mockito's self-attach warning and PDFBox's fallback font warning are harmless.
 
 ## Keep in sync
 
-- The pgvector image in `compose.yaml` and `POSTGRES_IMAGE` in `TestcontainersConfiguration`.
+- The pgvector image in `compose.yaml`, `e2e/compose.yaml` and `POSTGRES_IMAGE` in `TestcontainersConfiguration`.
 - Forwarded paths in `frontend/proxy.conf.json` and `frontend/nginx.conf`.
 - The upload limit in `spring.servlet.multipart` in `application.yml`, `client_max_body_size` in `frontend/nginx.conf` and `MAX_FILE_SIZE_BYTES` in `document.model.ts`.
-- `spring.http.clients.read-timeout` in `application.yml` must stay below `proxy_read_timeout` in `frontend/nginx.conf`.
-- The model names in `application.yml` and `compose.yaml`, and the vector dimension in the migrations with the embedding model.
+- `docchat.rag.question-time-limit` and `spring.http.clients.read-timeout` in `application.yml` must stay below `proxy_read_timeout` in `frontend/nginx.conf`.
+- The model names in `application.yml`, `compose.yaml` and `MODELS` in `e2e/compose.yaml`, and the vector dimension in the migrations and `e2e/fake-ollama/server.mjs` with the embedding model.
+- The rules of `FakeEmbeddingModel` and `FakeChatModel` in the backend's tests and `e2e/fake-ollama/server.mjs`, and what that server answers with how the backend calls Ollama.
 - The question length in `QuestionRequest` in `ConversationController` and `MAX_QUESTION_LENGTH` in `ask.ts`.
 - The drawing and colours in `core/ui/brand-mark.ts` and `frontend/public/favicon.svg`, and `--color-ink` in `styles.scss` with `theme-color` in `index.html`.
 - The captures in `frontend/public/showcase` with the screens they show, retaken when those change visibly.

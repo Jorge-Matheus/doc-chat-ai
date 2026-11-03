@@ -13,8 +13,13 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.stream.IntStream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -62,6 +67,89 @@ class DocumentFlowIT {
         assertThat((Integer) JsonPath.read(document, "$.pageCount")).isEqualTo(3);
         assertThat(pagesOf(id)).containsExactly("Text of page one", "", "Text of page three");
         assertThat(Files.exists(fileOf(id))).isTrue();
+    }
+
+    @Test
+    void severalUploadsAtTheSameTimeAreAllProcessedAndKeptApart() throws Exception {
+        List<String> ids;
+        try (var uploads = Executors.newVirtualThreadPerTaskExecutor()) {
+            List<Future<HttpResponse<String>>> responses = IntStream.range(0, 6)
+                    .mapToObj(number -> uploads.submit(
+                            () -> alice.upload("same-time-" + number + ".pdf", TestPdfs.withPages("Text of file " + number))))
+                    .toList();
+            List<String> started = new ArrayList<>();
+            for (Future<HttpResponse<String>> response : responses) {
+                assertThat(response.get().statusCode()).isEqualTo(202);
+                started.add(JsonPath.read(response.get().body(), "$.id"));
+            }
+            ids = started;
+        }
+
+        assertThat(ids).doesNotHaveDuplicates();
+        for (int number = 0; number < ids.size(); number++) {
+            String document = awaitFinished(alice, ids.get(number));
+            assertThat((String) JsonPath.read(document, "$.status")).isEqualTo("READY");
+            assertThat((String) JsonPath.read(document, "$.filename")).isEqualTo("same-time-" + number + ".pdf");
+            assertThat(pagesOf(ids.get(number))).containsExactly("Text of file " + number);
+        }
+    }
+
+    @Test
+    void sendingTheSameFileTwiceKeepsTwoSeparateDocuments() {
+        byte[] file = TestPdfs.withPages("The same text");
+
+        String first = uploadAndWait(alice, "same.pdf", file);
+        String second = uploadAndWait(alice, "same.pdf", file);
+
+        assertThat(first).isNotEqualTo(second);
+        assertThat(alice.delete("/api/documents/" + first).statusCode()).isEqualTo(204);
+        assertThat(alice.getBytes("/api/documents/" + second + "/file").body()).isEqualTo(file);
+    }
+
+    @Test
+    void deletingTwiceAnswersThatItIsAlreadyGone() {
+        String id = uploadAndWait(alice, "once.pdf");
+
+        assertThat(alice.delete("/api/documents/" + id).statusCode()).isEqualTo(204);
+        assertThat(alice.delete("/api/documents/" + id).statusCode()).isEqualTo(404);
+    }
+
+    @Test
+    void aDocumentWithAnUnusableFileCannotBeTriedAgain() {
+        HttpResponse<String> response = alice.upload("broken.pdf", TestPdfs.corrupt());
+        String id = JsonPath.read(response.body(), "$.id");
+        assertThat((Boolean) JsonPath.read(awaitFinished(alice, id), "$.canRetry")).isFalse();
+
+        HttpResponse<String> retry = alice.send("POST", "/api/documents/" + id + "/retry", null);
+
+        assertThat(retry.statusCode()).isEqualTo(409);
+        assertThat((String) JsonPath.read(retry.body(), "$.code")).isEqualTo("DOCUMENT_CANNOT_BE_RETRIED");
+    }
+
+    @Test
+    void aDocumentThatIsReadyCannotBeTriedAgain() {
+        String id = uploadAndWait(alice, "ready.pdf");
+
+        HttpResponse<String> retry = alice.send("POST", "/api/documents/" + id + "/retry", null);
+
+        assertThat(retry.statusCode()).isEqualTo(409);
+        assertThat((String) JsonPath.read(alice.get("/api/documents/" + id).body(), "$.status")).isEqualTo("READY");
+    }
+
+    @Test
+    void theLargestDocumentAllowedIsSavedAndOneMorePageIsRefused() {
+        String[] pages = new String[2000];
+        Arrays.fill(pages, "Text of a page in a very long document, repeated many times over.");
+
+        HttpResponse<String> largest = alice.upload("largest.pdf", TestPdfs.withPages(pages));
+        String document = awaitFinished(alice, JsonPath.read(largest.body(), "$.id"));
+
+        assertThat((String) JsonPath.read(document, "$.status")).isEqualTo("READY");
+        assertThat((Integer) JsonPath.read(document, "$.pageCount")).isEqualTo(2000);
+
+        String[] tooMany = Arrays.copyOf(pages, 2001);
+        tooMany[2000] = "One more page";
+        assertThat(failureReasonOf("too-large.pdf", TestPdfs.withPages(tooMany))).isEqualTo("TOO_MANY_PAGES");
     }
 
     @Test
@@ -264,7 +352,11 @@ class DocumentFlowIT {
     }
 
     private String uploadAndWait(ApiClient client, String filename) {
-        HttpResponse<String> response = client.upload(filename, TestPdfs.withPages("Some text"));
+        return uploadAndWait(client, filename, TestPdfs.withPages("Some text"));
+    }
+
+    private String uploadAndWait(ApiClient client, String filename, byte[] content) {
+        HttpResponse<String> response = client.upload(filename, content);
         assertThat(response.statusCode()).isEqualTo(202);
         String id = JsonPath.read(response.body(), "$.id");
         awaitFinished(client, id);

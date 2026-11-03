@@ -4,7 +4,7 @@ DocChat AI is a full-stack platform, under construction, for asking questions ab
 
 It runs only on your own machine. Your documents never leave it: there is no cloud service and no deployment, and it uses only free software.
 
-> **Current state:** accounts, PDF upload, conversations with cited answers and a viewer for the source pages work (Phases 1 to 4). The automated browser tests, observability and load tests are not implemented yet. See [Project status](#project-status).
+> **Current state:** accounts, PDF upload, conversations with cited answers and a viewer for the source pages work, with automated browser and security tests and recovery from failures (Phases 1 to 5). Observability and load tests are not implemented yet. See [Project status](#project-status).
 
 ## The problem
 
@@ -18,10 +18,10 @@ Finding a specific answer in a long document, such as a 40-page contract, means 
 | 2. Authentication and documents | Accounts, authorization, PDF upload and extraction | Complete |
 | 3. RAG | Chunking, embeddings, vector search, LLM answers with citations | Complete |
 | 4. Conversations and interface | History, source viewer, complete UI flow | Complete |
-| 5. Tests and robustness | End-to-end and security tests, failure recovery | Planned |
+| 5. Tests and robustness | End-to-end and security tests, failure recovery | Complete |
 | 6. Performance and documentation | Observability, load tests, final documentation | Planned |
 
-**How Phases 1 to 4 were checked:** the automated tests listed under [Tests](#tests), which use fake models, plus runs on the developer's machine of the Compose stack and of the development setup. With the stack running, stopping the database, the backend and the AI service was tried by hand, as was upgrading a database that already had documents. The complete flow was run in headless Microsoft Edge with the real models, including a PDF of 500 pages, conversations with follow-up questions, the source viewer and the original PDF opening at the cited page. Those browser checks use one-off scripts that are not part of this repository, so they are not repeated automatically yet. The quality of answers was measured on a few short documents written for the tests, not on real ones.
+**How Phases 1 to 5 were checked:** the automated tests listed under [Tests](#tests), which include the complete flow in a real browser, stopping the database, the backend and the AI service, and restarting the backend during processing. They run in headless Microsoft Edge on the developer's machine, and nothing runs them automatically on a server. Separate commands run the same browser against the real models. A PDF of 500 pages with the real models, opening the original PDF at the cited page, and upgrading a database that already had documents were each checked once by hand and are not repeated automatically. The quality of answers was measured on a few short documents written for the tests, not on real ones.
 
 ## Architecture
 
@@ -50,7 +50,9 @@ Backend packages today:
 | `com.docchat.rag` | Passage search, rewriting of follow-up questions, the prompts, and answers with verified citations |
 | `com.docchat.chat` | Conversations: storing questions, answers and citations, and their ownership |
 
-**Processing a document.** An upload is answered right after the file is stored, and the document starts as `PROCESSING`. A small pool of workers extracts the text of each page, splits it into overlapping passages that never cross a page, embeds them and saves everything in one transaction. The document then becomes `READY`, or `FAILED` with a reason. The interface checks every two seconds while a document is processing. Documents interrupted by a shutdown are processed again at the next startup.
+**Processing a document.** An upload is answered right after the file is stored, and the document starts as `PROCESSING`. A small pool of workers extracts the text of each page, splits it into overlapping passages that never cross a page, embeds them and saves everything in one transaction. The document then becomes `READY`, or `FAILED` with a reason. The interface checks every two seconds while a document is processing.
+
+A document does not stay in `PROCESSING` forever. One that takes longer than the time limit fails with that reason. A shutdown or a database outage says nothing about the document, so it stays as it was, and a check at startup and every minute finds the documents no worker has and processes them again. A document that failed for a reason unrelated to its file, such as the AI service being down, can be tried again from the list without uploading it again.
 
 **Answering a question.**
 
@@ -159,14 +161,15 @@ The API is documented with OpenAPI at `/v3/api-docs`, and Swagger UI is at `/swa
 | `POST /api/auth/login` | Signs in from a form with `email` and `password`. Answers 204 and sets the session cookie. |
 | `POST /api/auth/logout` | Ends the session. Answers 204. |
 | `GET /api/auth/me` | The signed-in user. Answers 401 when no one is signed in. |
-| `POST /api/documents` | Uploads a PDF of up to 25 MB as the multipart part `file`. Answers 202. |
+| `POST /api/documents` | Uploads a PDF of up to 25 MB as the multipart part `file`. Answers 202, or 409 with the code `STORAGE_LIMIT_REACHED` when the user's files would pass 5 GB. |
 | `GET /api/documents?page=0&size=20` | The user's documents, newest first, with `items`, `page`, `size` and `totalItems`. |
-| `GET /api/documents/{id}` | One document, with its `status`, `failureReason` and `pageCount`. |
+| `GET /api/documents/{id}` | One document, with its `status`, `failureReason`, `canRetry` and `pageCount`. |
 | `GET /api/documents/{id}/pages/{pageNumber}` | The text extracted from one page, with `filename`, `pageNumber`, `pageCount` and `text`. |
 | `GET /api/documents/{id}/file` | The original PDF, to be displayed in the browser. |
+| `POST /api/documents/{id}/retry` | Processes a failed document again, if its `canRetry` is `true`. Answers 202, or 409 with the code `DOCUMENT_CANNOT_BE_RETRIED`. |
 | `DELETE /api/documents/{id}` | Deletes the document, its text, its passages and its file. Conversations stay, and citations of it say the document was deleted. Answers 204. |
-| `POST /api/conversations` | Starts a conversation from JSON with `question` (up to 2000 characters) and optionally `documentIds`. Answers 201 with the conversation and its first turn, or 503 with the code `AI_UNAVAILABLE` when the models cannot be reached, and then nothing is stored. |
-| `POST /api/conversations/{id}/turns` | Asks another question in a conversation, with the same JSON. It can refer to earlier questions. Answers 201 with the turn, or 503 as above. |
+| `POST /api/conversations` | Starts a conversation from JSON with `question` (up to 2000 characters) and optionally `documentIds`. Answers 201 with the conversation and its first turn. When the models cannot be reached or take longer than the time limit, it answers 503 with the code `AI_UNAVAILABLE`, and with too many questions being answered at once, 429 with the code `TOO_MANY_QUESTIONS`. In both cases nothing is stored. |
+| `POST /api/conversations/{id}/turns` | Asks another question in a conversation, with the same JSON. It can refer to earlier questions. Answers 201 with the turn, or as above. |
 | `GET /api/conversations?page=0&size=20` | The user's conversations, most recently active first, with `items`, `page`, `size` and `totalItems`. |
 | `GET /api/conversations/{id}` | One conversation with all its `turns`. |
 | `DELETE /api/conversations/{id}` | Deletes a conversation with its questions and answers. Answers 204. |
@@ -206,19 +209,20 @@ A turn looks like this. When the documents do not contain the answer, `answered`
 }
 ```
 
-Errors use [RFC 9457 Problem Details](https://www.rfc-editor.org/rfc/rfc9457) with `code`, `timestamp` and `correlationId` members, plus `errors` when request fields are invalid. Every response has an `X-Correlation-Id` header, and the same id appears in the logs, including those of the document's background processing.
+Errors use [RFC 9457 Problem Details](https://www.rfc-editor.org/rfc/rfc9457) with `code`, `timestamp` and `correlationId` members, plus `errors` when request fields are invalid. Every response has an `X-Correlation-Id` header, and the same id appears in the logs, including those of the document's background processing. While the database is down, any request that needs an account or its data answers 503 with the code `DATABASE_UNAVAILABLE`, and the status and health endpoints keep working.
 
 A `FAILED` document has one of these reasons:
 
-| `failureReason` | Meaning |
-|---|---|
-| `NOT_READABLE` | The file is damaged or is not really a PDF |
-| `PROTECTED` | The file needs a password or forbids text extraction |
-| `NO_EXTRACTABLE_TEXT` | No page has text, as in a scanned PDF |
-| `TOO_MANY_PAGES` | The file has more than 2000 pages |
-| `PROCESSING_UNAVAILABLE` | The processing queue was full |
-| `EMBEDDING_UNAVAILABLE` | The embedding model could not be reached |
-| `INTERNAL_ERROR` | An unexpected failure, recorded in the logs |
+| `failureReason` | Meaning | `canRetry` |
+|---|---|---|
+| `NOT_READABLE` | The file is damaged or is not really a PDF | No |
+| `PROTECTED` | The file needs a password or forbids text extraction | No |
+| `NO_EXTRACTABLE_TEXT` | No page has text, as in a scanned PDF | No |
+| `TOO_MANY_PAGES` | The file has more than 2000 pages | No |
+| `PROCESSING_UNAVAILABLE` | The processing queue was full | Yes |
+| `EMBEDDING_UNAVAILABLE` | The embedding model could not be reached | Yes |
+| `PROCESSING_TIMED_OUT` | Processing took longer than the 30-minute limit | Yes |
+| `INTERNAL_ERROR` | An unexpected failure, recorded in the logs | Yes |
 
 ## Tests
 
@@ -229,18 +233,25 @@ A `FAILED` document has one of these reasons:
 | `npm test -- --watch=false` (in `frontend`) | Component and service tests | No |
 | `npm run lint` (in `frontend`) | ESLint | No |
 | `npm run build` (in `frontend`) | Production build | No |
+| `npm test` (in `e2e`, after `npm ci`) | The whole application in a real browser: the complete flow, unauthorized access, unusable files, hostile content, and the AI service, the backend and the database stopping and returning. Takes a few minutes. | Yes |
+| `npm run test:real` (in `e2e`) | The quality of real answers: the right page, across languages, nothing invented, instructions in a PDF not obeyed. Run it after changing a prompt, a model or the search. | Yes, with a GPU and the `ollama` service of the main stack running |
 
-No test calls a paid API or needs a GPU. Test PDFs are generated by the tests themselves. Automated tests prove the plumbing with predictable fake models, so they do not measure how good the real models' answers are.
+No test calls a paid API, and only `npm run test:real` needs a GPU. Test PDFs are generated by the tests themselves. Everything except that command uses predictable fake models, so it proves the plumbing and not how good the real models' answers are.
+
+The browser tests use Microsoft Edge, which comes with Windows, and run on their own stack with its own database and files, defined in `e2e/compose.yaml`. It can run next to the main stack, and nothing in it touches your documents. See [ADR 0009](docs/adr/0009-browser-tests-on-an-isolated-stack.md). On another system, or to use another browser, change `channel` in `e2e/playwright.config.ts`. To look at the stack after a failure, set `E2E_KEEP_STACK=1` before running them.
 
 ## Security
 
 This version is meant to run on your own machine and **must not be exposed publicly**, because it does not yet have the protections listed under [Known limitations](#known-limitations). Today:
 
 - Passwords are hashed with BCrypt.
-- Sessions live in PostgreSQL behind an HttpOnly, SameSite=Lax cookie, and signing in replaces the session id.
+- Sessions live in PostgreSQL behind an HttpOnly, SameSite=Lax cookie, signing in replaces the session id, and a session ends after 30 minutes without activity.
 - Requests that change data need a CSRF token.
 - Each user reaches only their own documents, passages, pages, files and conversations. Another user's document or conversation answers 404, so its existence is not revealed.
+- These rules are tested against the list of routes read from the running application, so a route added later is covered without changing the test.
 - Uploads are checked by their PDF signature and size, and files on disk are named after the document id, never after the name the client sent.
+- Each user can keep up to 5 GB of files, and up to 4 questions are answered at once, so that one account cannot fill the disk or hold every request waiting for the GPU. These limits are in `application.yml`.
+- The pages have a Content Security Policy that blocks inline scripts, as a second line of defence behind displaying document text as text.
 - Original files are always served as `application/pdf` with `nosniff`, so a file that is also a valid web page cannot run as a page of this site.
 - Document text is treated as untrusted when it reaches the model, including when earlier answers are used to understand a follow-up, and it is displayed as text, never as markup.
 - Questions and answers are stored in the database with the conversation. They and document contents are not written to the logs.
@@ -262,6 +273,10 @@ This version is meant to run on your own machine and **must not be exposed publi
 | `403` with the code `FORBIDDEN` on a request that changes data | The request has no CSRF token | Send the `XSRF-TOKEN` cookie's value in the `X-XSRF-TOKEN` header |
 | Docker cannot start `ollama` because of the GPU | Docker cannot reach an NVIDIA GPU | Update the driver and check with `docker run --rm --gpus all ubuntu:24.04 nvidia-smi` |
 | The home page shows the AI models as down | Ollama is stopped or a model is missing | Run `docker compose up -d ollama ollama-models` |
+| A document failed with "The AI service was not available" | Ollama was stopped when it was processed | Start Ollama as above and choose "Try again" in the list |
+| `The database is not available right now` | The database is stopped | Run `docker compose up -d db`. Everything recovers within seconds, and documents being processed continue by themselves. |
+| Browser tests fail with `Executable doesn't exist` or cannot find `msedge` | Microsoft Edge is not installed | Install Edge, or change `channel` in `e2e/playwright.config.ts` |
+| `The real models were not found` from `npm run test:real` | The `ollama` service of the main stack is not running | Run `docker compose up -d ollama ollama-models` from the repository root |
 
 ## Known limitations
 
@@ -277,12 +292,12 @@ This version is meant to run on your own machine and **must not be exposed publi
 - The answer appears all at once, not word by word.
 - Instructions hidden in a PDF were never obeyed in tests with the real model, but they sometimes made it answer "not found", and this risk cannot be fully eliminated.
 - The threshold for dropping unrelated passages was measured on a small set of questions.
-- A document that failed because the AI service was down must be deleted and uploaded again.
 - There is no email verification, password reset or account deletion.
-- Login has no rate limit, and uploads have no per-user quota.
-- Processing one PDF has no time limit. The number of workers is limited, so a pathological file can hold a worker but cannot exhaust the server's threads.
+- Login has no rate limit.
+- A file that keeps the PDF library busy fails at the time limit and frees its worker, but Java cannot stop that thread, so it uses a processor core until the application restarts.
+- A file left on the disk by a crash between storing it and recording it, or that could not be deleted, stays there. No one can reach it, but it takes up space.
+- Browser tests only run in Microsoft Edge.
 - Swagger UI's "Try it out" does not send the CSRF token, so only read requests work there.
-- The UI has automated component tests but no automated browser tests yet (Phase 5).
 - Mockito prints a self-attach warning during backend tests, and PDFBox logs a fallback font warning for PDFs using standard fonts. Neither affects results.
 
 ## Architecture decisions
@@ -295,3 +310,4 @@ This version is meant to run on your own machine and **must not be exposed publi
 - [ADR 0006: Angular Material for the interface](docs/adr/0006-angular-material.md)
 - [ADR 0007: Local AI with Ollama](docs/adr/0007-local-ai-with-ollama.md)
 - [ADR 0008: Conversations and follow-up questions](docs/adr/0008-conversations-and-follow-up-questions.md)
+- [ADR 0009: Browser tests on an isolated stack](docs/adr/0009-browser-tests-on-an-isolated-stack.md)

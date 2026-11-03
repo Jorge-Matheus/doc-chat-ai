@@ -1,16 +1,25 @@
 package com.docchat.rag;
 
+import com.docchat.ai.AiUnavailableException;
 import com.docchat.ai.TextEmbedder;
 import com.docchat.ai.TextGenerator;
+import com.docchat.common.web.ApiException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
-import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.core.task.AsyncTaskExecutor;
+import org.springframework.core.task.TaskRejectedException;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
 /** Answers a question from the user's own documents, citing the pages it used. */
 @Service
-@EnableConfigurationProperties(RagProperties.class)
 public class AnswerService {
 
     /** How many earlier turns are enough to understand a follow-up question. */
@@ -21,18 +30,21 @@ public class AnswerService {
     private final QuestionRewriter rewriter;
     private final ChunkSearchRepository chunkSearch;
     private final RagProperties properties;
+    private final AsyncTaskExecutor executor;
 
     AnswerService(
             TextEmbedder embedder,
             TextGenerator generator,
             QuestionRewriter rewriter,
             ChunkSearchRepository chunkSearch,
-            RagProperties properties) {
+            RagProperties properties,
+            @Qualifier("questionExecutor") AsyncTaskExecutor executor) {
         this.embedder = embedder;
         this.generator = generator;
         this.rewriter = rewriter;
         this.chunkSearch = chunkSearch;
         this.properties = properties;
+        this.executor = executor;
     }
 
     /** @param answer null when the documents did not contain the answer */
@@ -51,8 +63,44 @@ public class AnswerService {
 
     public record Citation(int number, UUID documentId, String filename, int pageNumber, int chunkIndex) {}
 
-    /** @param history the most recent turns of the conversation, oldest first */
+    /**
+     * A question calls the models several times, and each call has its own read timeout. The limit
+     * here covers all of them, so the user gets this error and not the proxy's while the answer is
+     * still being stored, which would repeat it when they ask again.
+     *
+     * @param history the most recent turns of the conversation, oldest first
+     */
     public Answer answer(UUID ownerId, String question, List<UUID> documentIds, List<PreviousTurn> history) {
+        Future<Answer> work = start(() -> findAnswer(ownerId, question, documentIds, history));
+        try {
+            return work.get(properties.questionTimeLimit().toMillis(), TimeUnit.MILLISECONDS);
+        } catch (TimeoutException ex) {
+            work.cancel(true);
+            throw new AiUnavailableException(ex);
+        } catch (InterruptedException ex) {
+            work.cancel(true);
+            Thread.currentThread().interrupt();
+            throw new AiUnavailableException(ex);
+        } catch (ExecutionException ex) {
+            if (ex.getCause() instanceof RuntimeException cause) {
+                throw cause;
+            }
+            throw new IllegalStateException(ex.getCause());
+        }
+    }
+
+    private Future<Answer> start(Callable<Answer> findingTheAnswer) {
+        try {
+            return executor.submit(findingTheAnswer);
+        } catch (TaskRejectedException ex) {
+            throw new ApiException(
+                    HttpStatus.TOO_MANY_REQUESTS,
+                    "TOO_MANY_QUESTIONS",
+                    "Several questions are being answered right now. Try again in a moment.");
+        }
+    }
+
+    private Answer findAnswer(UUID ownerId, String question, List<UUID> documentIds, List<PreviousTurn> history) {
         String standalone = rewriter.rewrite(question, history);
         String interpreted = standalone.equals(question) ? null : standalone;
 

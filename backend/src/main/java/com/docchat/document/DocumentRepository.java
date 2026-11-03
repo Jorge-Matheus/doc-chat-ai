@@ -88,6 +88,29 @@ public class DocumentRepository {
                 .single();
     }
 
+    long totalSizeOwnedBy(UUID ownerId) {
+        return jdbcClient
+                .sql("SELECT coalesce(sum(size_bytes), 0) FROM documents WHERE owner_id = :ownerId")
+                .param("ownerId", ownerId)
+                .query(Long.class)
+                .single();
+    }
+
+    /** Sends a document back to processing if it failed for a temporary reason. */
+    Optional<Document> requeueFailed(UUID id, UUID ownerId) {
+        return jdbcClient
+                .sql("""
+                        UPDATE documents SET status = 'PROCESSING', failure_reason = NULL
+                        WHERE id = :id AND owner_id = :ownerId AND status = 'FAILED'
+                          AND failure_reason IN (:temporaryReasons)
+                        RETURNING\s""" + COLUMNS)
+                .param("id", id)
+                .param("ownerId", ownerId)
+                .param("temporaryReasons", DocumentFailureReason.temporaryNames())
+                .query(ROW_MAPPER)
+                .optional();
+    }
+
     Optional<DocumentPage> findPageOwned(UUID id, UUID ownerId, int pageNumber) {
         return jdbcClient
                 .sql("""

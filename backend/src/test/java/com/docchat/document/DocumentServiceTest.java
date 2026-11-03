@@ -17,6 +17,8 @@ import com.docchat.common.web.ApiException;
 import com.docchat.storage.FileStorage;
 import com.docchat.testsupport.TestPdfs;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
+import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -24,6 +26,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.util.unit.DataSize;
 
 class DocumentServiceTest {
 
@@ -32,7 +35,8 @@ class DocumentServiceTest {
     private final DocumentRepository repository = mock(DocumentRepository.class);
     private final FileStorage storage = mock(FileStorage.class);
     private final ApplicationEventPublisher events = mock(ApplicationEventPublisher.class);
-    private final DocumentService service = new DocumentService(repository, storage, events);
+    private final DocumentService service =
+            new DocumentService(repository, storage, events, new DocumentProperties(DataSize.ofMegabytes(10)));
 
     @Test
     void storesAValidFileThenAnnouncesIt() throws Exception {
@@ -63,6 +67,76 @@ class DocumentServiceTest {
                         ApiException.class,
                         ex -> assertThat(ex.getStatus()).isEqualTo(HttpStatus.UNSUPPORTED_MEDIA_TYPE));
         verifyNoInteractions(storage);
+    }
+
+    @Test
+    void refusesAFileThatWouldPassTheUsersStorageLimit() {
+        MockMultipartFile file = pdf("a.pdf");
+        when(repository.totalSizeOwnedBy(OWNER)).thenReturn(DataSize.ofMegabytes(10).toBytes() - file.getSize() + 1);
+
+        assertThatThrownBy(() -> service.upload(OWNER, file))
+                .isInstanceOfSatisfying(ApiException.class, ex -> {
+                    assertThat(ex.getStatus()).isEqualTo(HttpStatus.CONFLICT);
+                    assertThat(ex.getCode()).isEqualTo("STORAGE_LIMIT_REACHED");
+                });
+        verifyNoInteractions(storage, events);
+    }
+
+    @Test
+    void theStorageLimitIsShownInUnitsAPersonReads() {
+        assertThat(DocumentService.readable(DataSize.ofGigabytes(5))).isEqualTo("5 GB");
+        assertThat(DocumentService.readable(DataSize.ofMegabytes(1536))).isEqualTo("1.5 GB");
+        assertThat(DocumentService.readable(DataSize.ofMegabytes(25))).isEqualTo("25 MB");
+        assertThat(DocumentService.readable(DataSize.ofKilobytes(5))).isEqualTo("5 KB");
+        assertThat(DocumentService.readable(DataSize.ofBytes(100))).isEqualTo("100 bytes");
+    }
+
+    @Test
+    void acceptsAFileThatFillsTheUsersStorageLimitExactly() throws Exception {
+        MockMultipartFile file = pdf("a.pdf");
+        when(repository.totalSizeOwnedBy(OWNER)).thenReturn(DataSize.ofMegabytes(10).toBytes() - file.getSize());
+
+        service.upload(OWNER, file);
+
+        verify(storage).store(anyString(), any());
+    }
+
+    @Test
+    void retryingADocumentProcessesItAgain() {
+        UUID id = UUID.randomUUID();
+        Document requeued = new Document(id, OWNER, "a.pdf", 1, DocumentStatus.PROCESSING, null, null, Instant.now());
+        when(repository.requeueFailed(id, OWNER)).thenReturn(Optional.of(requeued));
+
+        assertThat(service.retry(id, OWNER)).isEqualTo(requeued);
+
+        verify(events).publishEvent(new DocumentUploadedEvent(id));
+    }
+
+    @Test
+    void retryingADocumentThatCannotBeRetriedDoesNothing() {
+        UUID id = UUID.randomUUID();
+        Document ready = new Document(id, OWNER, "a.pdf", 1, DocumentStatus.READY, null, 1, Instant.now());
+        when(repository.requeueFailed(id, OWNER)).thenReturn(Optional.empty());
+        when(repository.findOwned(id, OWNER)).thenReturn(Optional.of(ready));
+
+        assertThatThrownBy(() -> service.retry(id, OWNER))
+                .isInstanceOfSatisfying(ApiException.class, ex -> {
+                    assertThat(ex.getStatus()).isEqualTo(HttpStatus.CONFLICT);
+                    assertThat(ex.getCode()).isEqualTo("DOCUMENT_CANNOT_BE_RETRIED");
+                });
+        verifyNoInteractions(events);
+    }
+
+    @Test
+    void retryingADocumentOfAnotherUserAnswersThatItWasNotFound() {
+        UUID id = UUID.randomUUID();
+        when(repository.requeueFailed(id, OWNER)).thenReturn(Optional.empty());
+        when(repository.findOwned(id, OWNER)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.retry(id, OWNER))
+                .isInstanceOfSatisfying(
+                        ApiException.class, ex -> assertThat(ex.getCode()).isEqualTo("DOCUMENT_NOT_FOUND"));
+        verifyNoInteractions(events);
     }
 
     @Test

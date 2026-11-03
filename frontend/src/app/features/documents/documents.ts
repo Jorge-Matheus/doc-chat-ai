@@ -26,9 +26,10 @@ const FAILURE_MESSAGES: Record<DocumentFailureReason, string> = {
   PROTECTED: 'This PDF is password protected or does not allow copying its text.',
   NO_EXTRACTABLE_TEXT: 'This PDF has no selectable text. Scanned documents are not supported.',
   TOO_MANY_PAGES: 'This PDF has more pages than the supported limit.',
-  PROCESSING_UNAVAILABLE: 'The system was busy. Delete this document and upload it again.',
-  EMBEDDING_UNAVAILABLE: 'The AI service was not available. Delete this document and upload it again.',
-  INTERNAL_ERROR: 'Something went wrong while reading this file. Delete it and try again.',
+  PROCESSING_UNAVAILABLE: 'The system was busy when this file arrived.',
+  EMBEDDING_UNAVAILABLE: 'The AI service was not available when this file was read.',
+  PROCESSING_TIMED_OUT: 'This file took too long to read.',
+  INTERNAL_ERROR: 'Something went wrong while reading this file.',
 };
 
 @Component({
@@ -62,6 +63,7 @@ export class Documents {
   protected readonly loading = signal(true);
   protected readonly loadFailed = signal(false);
   protected readonly uploading = signal(false);
+  protected readonly retryingId = signal<string | null>(null);
   protected readonly actionError = signal<string | null>(null);
 
   constructor() {
@@ -112,6 +114,25 @@ export class Documents {
       });
   }
 
+  protected retry(document: UserDocument): void {
+    this.actionError.set(null);
+    this.retryingId.set(document.id);
+    this.documentService
+      .retry(document.id)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: () => {
+          this.retryingId.set(null);
+          this.load();
+        },
+        error: (error: unknown) => {
+          this.retryingId.set(null);
+          this.actionError.set(errorMessage(error, 'The document could not be tried again. Try again.'));
+          this.load();
+        },
+      });
+  }
+
   protected confirmDelete(document: UserDocument): void {
     this.actionError.set(null);
     this.dialog
@@ -155,6 +176,9 @@ export class Documents {
     this.loading.set(false);
     this.loadFailed.set(list === null);
     if (list === null) {
+      // A failed check must not end the checks, or the page would stay on an outdated state after a
+      // short outage. The message goes away by itself with the next successful one.
+      this.keepCheckingWhileProcessing(this.documents());
       return;
     }
     // Deleting the only document of the last page leaves the user on a page that no longer exists.
@@ -165,7 +189,11 @@ export class Documents {
     }
     this.documents.set(list.items);
     this.totalItems.set(list.totalItems);
-    if (list.items.some((document) => document.status === 'PROCESSING')) {
+    this.keepCheckingWhileProcessing(list.items);
+  }
+
+  private keepCheckingWhileProcessing(documents: readonly UserDocument[]): void {
+    if (documents.some((document) => document.status === 'PROCESSING')) {
       this.pollTimer = setTimeout(() => this.load(), POLL_INTERVAL_MS);
     }
   }

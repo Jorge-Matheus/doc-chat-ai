@@ -27,6 +27,7 @@ function aDocument(overrides: Partial<UserDocument> = {}): UserDocument {
     sizeBytes: 1024,
     status: 'READY',
     failureReason: null,
+    canRetry: false,
     pageCount: 3,
     createdAt: '2026-11-03T12:00:00Z',
     ...overrides,

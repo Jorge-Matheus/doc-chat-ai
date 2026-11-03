@@ -6,6 +6,7 @@ import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
+import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
@@ -13,7 +14,9 @@ import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.authentication.InternalAuthenticationServiceException;
 import org.springframework.security.core.AuthenticationException;
+import org.springframework.transaction.CannotCreateTransactionException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -42,8 +45,24 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         return respond(ex, ex.getStatus(), ex.getCode(), ex.getMessage(), request);
     }
 
+    /** An expected failure with a clear cause, so it is logged without a stack trace. */
+    @ExceptionHandler({DataAccessResourceFailureException.class, CannotCreateTransactionException.class})
+    ResponseEntity<Object> handleDatabaseUnavailable(Exception ex, WebRequest request) {
+        log.warn("Database unavailable: {}", ex.getClass().getSimpleName());
+        return respond(
+                ex,
+                HttpStatus.SERVICE_UNAVAILABLE,
+                "DATABASE_UNAVAILABLE",
+                "The database is not available right now. Try again in a moment.",
+                request);
+    }
+
     @ExceptionHandler(AuthenticationException.class)
     ResponseEntity<Object> handleAuthentication(AuthenticationException ex, WebRequest request) {
+        // The account could not be read, which says nothing about the email or the password.
+        if (ex instanceof InternalAuthenticationServiceException) {
+            return handleDatabaseUnavailable(ex, request);
+        }
         if (ex instanceof BadCredentialsException) {
             return respond(
                     ex,

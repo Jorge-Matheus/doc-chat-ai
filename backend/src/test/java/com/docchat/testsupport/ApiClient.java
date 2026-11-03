@@ -67,6 +67,16 @@ public final class ApiClient {
                 .build());
     }
 
+    /** Sends any request as the browser would. The JSON body can be null. */
+    public HttpResponse<String> send(String method, String path, String json) {
+        return send(withBody(withCsrf(request(path)), method, json).build());
+    }
+
+    /** Sends any request without the CSRF header, as a forged cross-site request would. */
+    public HttpResponse<String> sendWithoutCsrf(String method, String path, String json) {
+        return send(withBody(request(path), method, json).build());
+    }
+
     public HttpResponse<String> register(String email, String password) {
         return postJson(
                 "/api/auth/register",
@@ -121,6 +131,13 @@ public final class ApiClient {
         }
         cookie("XSRF-TOKEN").ifPresent(token -> builder.header("X-XSRF-TOKEN", token.getValue()));
         return builder;
+    }
+
+    private static HttpRequest.Builder withBody(HttpRequest.Builder builder, String method, String json) {
+        if (json == null) {
+            return builder.method(method, BodyPublishers.noBody());
+        }
+        return builder.header("Content-Type", "application/json").method(method, BodyPublishers.ofString(json));
     }
 
     private HttpResponse<String> send(HttpRequest request) {
