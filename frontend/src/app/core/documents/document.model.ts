@@ -23,6 +23,15 @@ export interface UserDocument {
   readonly createdAt: string;
 }
 
+/** Mirrors DocumentPage in the backend: the text extracted from one page. */
+export interface DocumentPage {
+  readonly documentId: string;
+  readonly filename: string;
+  readonly pageNumber: number;
+  readonly pageCount: number;
+  readonly text: string;
+}
+
 export interface DocumentList {
   readonly items: readonly UserDocument[];
   readonly page: number;

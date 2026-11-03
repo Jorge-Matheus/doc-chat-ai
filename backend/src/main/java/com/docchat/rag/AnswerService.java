@@ -11,46 +11,65 @@ import org.springframework.stereotype.Service;
 /** Answers a question from the user's own documents, citing the pages it used. */
 @Service
 @EnableConfigurationProperties(RagProperties.class)
-class AnswerService {
+public class AnswerService {
+
+    /** How many earlier turns are enough to understand a follow-up question. */
+    public static final int HISTORY_TURNS = 3;
 
     private final TextEmbedder embedder;
     private final TextGenerator generator;
+    private final QuestionRewriter rewriter;
     private final ChunkSearchRepository chunkSearch;
     private final RagProperties properties;
 
     AnswerService(
             TextEmbedder embedder,
             TextGenerator generator,
+            QuestionRewriter rewriter,
             ChunkSearchRepository chunkSearch,
             RagProperties properties) {
         this.embedder = embedder;
         this.generator = generator;
+        this.rewriter = rewriter;
         this.chunkSearch = chunkSearch;
         this.properties = properties;
     }
 
-    record Answer(boolean answered, String text, List<Citation> citations) {
+    /** @param answer null when the documents did not contain the answer */
+    public record PreviousTurn(String question, String answer) {}
 
-        static final Answer NOT_FOUND = new Answer(false, null, List.of());
+    /**
+     * @param interpretedQuestion what was searched for, or null if that is the question as it was asked
+     * @param text null when the documents do not contain the answer
+     */
+    public record Answer(String interpretedQuestion, String text, List<Citation> citations) {
+
+        private static Answer notFound(String interpretedQuestion) {
+            return new Answer(interpretedQuestion, null, List.of());
+        }
     }
 
-    record Citation(int number, UUID documentId, String filename, int pageNumber, String excerpt) {}
+    public record Citation(int number, UUID documentId, String filename, int pageNumber, int chunkIndex) {}
 
-    Answer ask(UUID ownerId, String question, List<UUID> documentIds) {
-        float[] questionEmbedding = embedder.embed(question);
+    /** @param history the most recent turns of the conversation, oldest first */
+    public Answer answer(UUID ownerId, String question, List<UUID> documentIds, List<PreviousTurn> history) {
+        String standalone = rewriter.rewrite(question, history);
+        String interpreted = standalone.equals(question) ? null : standalone;
+
+        float[] questionEmbedding = embedder.embed(standalone);
         List<RetrievedChunk> chunks =
                 chunkSearch.findClosest(ownerId, documentIds, questionEmbedding, properties.topK()).stream()
                         .filter(chunk -> chunk.similarity() >= properties.minSimilarity())
                         .toList();
         // Without relevant passages there is nothing to ground an answer on, so the model is not asked.
         if (chunks.isEmpty()) {
-            return Answer.NOT_FOUND;
+            return Answer.notFound(interpreted);
         }
 
-        String reply = generator.generate(AnswerPrompt.SYSTEM, AnswerPrompt.userMessage(question, chunks));
+        String reply = generator.generate(AnswerPrompt.SYSTEM, AnswerPrompt.userMessage(standalone, chunks));
         AnswerParser.ParsedAnswer parsed = AnswerParser.parse(reply, chunks.size());
         if (parsed.isNotFound()) {
-            return Answer.NOT_FOUND;
+            return Answer.notFound(interpreted);
         }
 
         List<Citation> citations = new ArrayList<>();
@@ -61,8 +80,8 @@ class AnswerService {
                     chunk.documentId(),
                     chunk.filename(),
                     chunk.pageNumber(),
-                    chunk.content()));
+                    chunk.chunkIndex()));
         }
-        return new Answer(true, parsed.text(), citations);
+        return new Answer(interpreted, parsed.text(), citations);
     }
 }

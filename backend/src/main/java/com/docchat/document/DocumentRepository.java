@@ -88,6 +88,22 @@ public class DocumentRepository {
                 .single();
     }
 
+    Optional<DocumentPage> findPageOwned(UUID id, UUID ownerId, int pageNumber) {
+        return jdbcClient
+                .sql("""
+                        SELECT d.filename, d.page_count, p.content
+                        FROM document_pages p
+                        JOIN documents d ON d.id = p.document_id
+                        WHERE d.id = :id AND d.owner_id = :ownerId AND p.page_number = :pageNumber
+                        """)
+                .param("id", id)
+                .param("ownerId", ownerId)
+                .param("pageNumber", pageNumber)
+                .query((row, rowNumber) -> new DocumentPage(
+                        id, row.getString("filename"), pageNumber, row.getInt("page_count"), row.getString("content")))
+                .optional();
+    }
+
     boolean deleteOwned(UUID id, UUID ownerId) {
         return jdbcClient
                         .sql("DELETE FROM documents WHERE id = :id AND owner_id = :ownerId")

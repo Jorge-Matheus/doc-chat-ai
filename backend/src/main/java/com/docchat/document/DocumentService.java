@@ -67,9 +67,26 @@ class DocumentService {
         return documentRepository.findOwned(id, ownerId).orElseThrow(DocumentService::notFound);
     }
 
-    DocumentPage list(UUID ownerId, int page, int size) {
+    DocumentList list(UUID ownerId, int page, int size) {
         List<Document> items = documentRepository.findPageOwnedBy(ownerId, size, (long) page * size);
-        return new DocumentPage(items, documentRepository.countOwnedBy(ownerId));
+        return new DocumentList(items, documentRepository.countOwnedBy(ownerId));
+    }
+
+    /** Only processed documents have pages, so one still processing also answers 404. */
+    DocumentPage getPage(UUID id, UUID ownerId, int pageNumber) {
+        return documentRepository
+                .findPageOwned(id, ownerId, pageNumber)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "PAGE_NOT_FOUND", "The page was not found."));
+    }
+
+    /** @return the content of the file, which the caller must close */
+    InputStream openFile(UUID id) {
+        try {
+            return fileStorage.open(Document.storageKey(id));
+        } catch (StorageException ex) {
+            log.warn("Could not open the file of document {}", id, ex);
+            throw new ApiException(HttpStatus.NOT_FOUND, "FILE_NOT_AVAILABLE", "The original file is not available.");
+        }
     }
 
     void delete(UUID id, UUID ownerId) {
@@ -79,7 +96,7 @@ class DocumentService {
         deleteFileQuietly(Document.storageKey(id));
     }
 
-    record DocumentPage(List<Document> items, long totalItems) {}
+    record DocumentList(List<Document> items, long totalItems) {}
 
     /** A document of another user gets the same answer, so its existence is not revealed. */
     private static ApiException notFound() {

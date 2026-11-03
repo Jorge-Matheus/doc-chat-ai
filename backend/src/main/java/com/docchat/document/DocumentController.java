@@ -8,9 +8,14 @@ import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import java.io.IOException;
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
+import org.springframework.core.io.InputStreamResource;
+import org.springframework.core.io.Resource;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -57,7 +62,7 @@ class DocumentController {
             @AuthenticationPrincipal AccountPrincipal principal,
             @Parameter(description = "Page number, starting at 0") @RequestParam(defaultValue = "0") @Min(0) int page,
             @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
-        DocumentService.DocumentPage result = documentService.list(principal.getId(), page, size);
+        DocumentService.DocumentList result = documentService.list(principal.getId(), page, size);
         List<DocumentResponse> items =
                 result.items().stream().map(DocumentResponse::from).toList();
         return new DocumentListResponse(items, page, size, result.totalItems());
@@ -67,6 +72,34 @@ class DocumentController {
     @Operation(summary = "Get a document of the user")
     DocumentResponse get(@AuthenticationPrincipal AccountPrincipal principal, @PathVariable UUID id) {
         return DocumentResponse.from(documentService.get(id, principal.getId()));
+    }
+
+    @GetMapping("/{id}/pages/{pageNumber}")
+    @Operation(summary = "Get the text extracted from one page of a document")
+    DocumentPage getPage(
+            @AuthenticationPrincipal AccountPrincipal principal,
+            @PathVariable UUID id,
+            @Parameter(description = "Page number, starting at 1") @PathVariable @Min(1) int pageNumber) {
+        return documentService.getPage(id, principal.getId(), pageNumber);
+    }
+
+    /**
+     * Uploads only have their signature checked, so a file could also be a valid HTML page. The fixed
+     * content type, together with the nosniff header sent with every response, keeps it from running
+     * as a page of this site.
+     */
+    @GetMapping("/{id}/file")
+    @Operation(summary = "Get the original PDF of a document")
+    ResponseEntity<Resource> getFile(@AuthenticationPrincipal AccountPrincipal principal, @PathVariable UUID id) {
+        Document document = documentService.get(id, principal.getId());
+        ContentDisposition disposition = ContentDisposition.inline()
+                .filename(document.filename(), StandardCharsets.UTF_8)
+                .build();
+        return ResponseEntity.ok()
+                .contentType(MediaType.APPLICATION_PDF)
+                .contentLength(document.sizeBytes())
+                .header(HttpHeaders.CONTENT_DISPOSITION, disposition.toString())
+                .body(new InputStreamResource(documentService.openFile(document.id())));
     }
 
     @DeleteMapping("/{id}")

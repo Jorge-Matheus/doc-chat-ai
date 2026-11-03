@@ -203,12 +203,34 @@ describe('Documents', () => {
     clickDelete();
     await fixture.whenStable();
 
-    expect(openDialog.mock.calls[0][1]).toEqual({ data: { filename: 'contract.pdf' } });
+    const dialogData = openDialog.mock.calls[0][1].data;
+    expect(dialogData.subject).toBe('contract.pdf');
+    expect(dialogData.message).toContain('Conversations that used it stay in your history');
     http.expectOne('/api/documents/doc-1').flush(null, { status: 204, statusText: 'No Content' });
     await fixture.whenStable();
 
     await respondWithList([]);
     expect(testId('empty')).not.toBeNull();
+  });
+
+  it('links to the original file only for documents that are ready', async () => {
+    await respondWithList([
+      aDocument(),
+      aDocument({ id: 'doc-2', status: 'PROCESSING', pageCount: null }),
+      aDocument({ id: 'doc-3', status: 'FAILED', failureReason: 'NOT_READABLE', pageCount: null }),
+    ]);
+
+    const links = element().querySelectorAll('[data-testid="open-file"]');
+    expect(links).toHaveLength(1);
+    expect(links[0].getAttribute('href')).toBe('/api/documents/doc-1/file');
+    expect(links[0].getAttribute('target')).toBe('_blank');
+    expect(links[0].getAttribute('rel')).toBe('noopener');
+
+    // A document still processing makes the page check again.
+    await vi.waitFor(() => http.expectOne(FIRST_PAGE).flush({ items: [], page: 0, size: 10, totalItems: 0 }), {
+      timeout: POLL_INTERVAL_MS + 1000,
+    });
+    await fixture.whenStable();
   });
 
   it('keeps the document when the user cancels', async () => {

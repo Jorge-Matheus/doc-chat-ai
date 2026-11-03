@@ -12,7 +12,7 @@ import org.springframework.stereotype.Repository;
 class ChunkSearchRepository {
 
     private static final String SEARCH = """
-            SELECT c.document_id, d.filename, c.page_number, c.content,
+            SELECT c.document_id, d.filename, c.page_number, c.chunk_index, c.content,
                    1 - (c.embedding <=> CAST(:embedding AS vector)) AS similarity
             FROM document_chunks c
             JOIN documents d ON d.id = c.document_id
@@ -43,6 +43,7 @@ class ChunkSearchRepository {
                         row.getObject("document_id", UUID.class),
                         row.getString("filename"),
                         row.getInt("page_number"),
+                        row.getInt("chunk_index"),
                         row.getString("content"),
                         row.getDouble("similarity")))
                 .list();

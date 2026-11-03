@@ -1,5 +1,7 @@
 package com.docchat.document;
 
+import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.startsWith;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
@@ -18,6 +20,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.docchat.auth.AccountPrincipal;
 import com.docchat.auth.SecurityConfig;
 import com.docchat.common.web.ApiException;
+import java.io.ByteArrayInputStream;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -100,7 +103,7 @@ class DocumentControllerTest {
 
     @Test
     void listReturnsPagingInformation() throws Exception {
-        when(service.list(USER_ID, 2, 5)).thenReturn(new DocumentService.DocumentPage(List.of(), 11));
+        when(service.list(USER_ID, 2, 5)).thenReturn(new DocumentService.DocumentList(List.of(), 11));
 
         mockMvc.perform(get("/api/documents")
                         .param("page", "2")
@@ -111,6 +114,54 @@ class DocumentControllerTest {
                 .andExpect(jsonPath("$.page").value(2))
                 .andExpect(jsonPath("$.size").value(5))
                 .andExpect(jsonPath("$.totalItems").value(11));
+    }
+
+    @Test
+    void aPageAnswersWithTheContractUsedByTheFrontend() throws Exception {
+        UUID id = UUID.randomUUID();
+        when(service.getPage(id, USER_ID, 3)).thenReturn(new DocumentPage(id, "a.pdf", 3, 9, "The text"));
+
+        mockMvc.perform(get("/api/documents/" + id + "/pages/3").with(user(PRINCIPAL)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.documentId").value(id.toString()))
+                .andExpect(jsonPath("$.filename").value("a.pdf"))
+                .andExpect(jsonPath("$.pageNumber").value(3))
+                .andExpect(jsonPath("$.pageCount").value(9))
+                .andExpect(jsonPath("$.text").value("The text"));
+    }
+
+    @Test
+    void pageNumbersStartAtOne() throws Exception {
+        mockMvc.perform(get("/api/documents/" + UUID.randomUUID() + "/pages/0").with(user(PRINCIPAL)))
+                .andExpect(status().isBadRequest());
+        verifyNoInteractions(service);
+    }
+
+    @Test
+    void theFileIsServedAsAPdfWithItsOriginalName() throws Exception {
+        UUID id = UUID.randomUUID();
+        byte[] content = {'%', 'P', 'D', 'F'};
+        when(service.get(id, USER_ID))
+                .thenReturn(new Document(
+                        id, USER_ID, "relatório.pdf", content.length, DocumentStatus.READY, null, 1, Instant.EPOCH));
+        when(service.openFile(id)).thenReturn(new ByteArrayInputStream(content));
+
+        mockMvc.perform(get("/api/documents/" + id + "/file").with(user(PRINCIPAL)))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType(MediaType.APPLICATION_PDF))
+                .andExpect(content().bytes(content))
+                .andExpect(header().longValue("Content-Length", content.length))
+                .andExpect(header().string("Content-Disposition", startsWith("inline; ")))
+                .andExpect(header().string("Content-Disposition", containsString("relat%C3%B3rio.pdf")))
+                .andExpect(header().string("X-Content-Type-Options", "nosniff"));
+    }
+
+    @Test
+    void theFileAndThePagesRequireAuthentication() throws Exception {
+        UUID id = UUID.randomUUID();
+        mockMvc.perform(get("/api/documents/" + id + "/file")).andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/documents/" + id + "/pages/1")).andExpect(status().isUnauthorized());
+        verifyNoInteractions(service);
     }
 
     @Test

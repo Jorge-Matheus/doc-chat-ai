@@ -15,7 +15,7 @@ import {
 } from '../../core/documents/document.model';
 import { DocumentService } from '../../core/documents/document.service';
 import { errorMessage } from '../../core/http/error-message';
-import { ConfirmDeleteData, ConfirmDeleteDialog } from './confirm-delete-dialog';
+import { ConfirmDialog, ConfirmDialogData } from '../../core/ui/confirm-dialog';
 
 const PAGE_SIZE = 10;
 export const POLL_INTERVAL_MS = 2000;
@@ -114,8 +114,13 @@ export class Documents {
   protected confirmDelete(document: UserDocument): void {
     this.actionError.set(null);
     this.dialog
-      .open<ConfirmDeleteDialog, ConfirmDeleteData, boolean>(ConfirmDeleteDialog, {
-        data: { filename: document.filename },
+      .open<ConfirmDialog, ConfirmDialogData, boolean>(ConfirmDialog, {
+        data: {
+          title: 'Delete this document?',
+          subject: document.filename,
+          message:
+            'The file and its text will be permanently deleted. Conversations that used it stay in your history, and their answers can still mention what it said, but its sources will no longer open. Delete those conversations too if you want that text gone.',
+        },
       })
       .afterClosed()
       .pipe(
@@ -135,6 +140,10 @@ export class Documents {
   protected onPage(event: PageEvent): void {
     this.pageIndex.set(event.pageIndex);
     this.load();
+  }
+
+  protected fileUrl(document: UserDocument): string {
+    return this.documentService.fileUrl(document.id);
   }
 
   protected failureMessage(document: UserDocument): string | null {

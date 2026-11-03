@@ -1,5 +1,6 @@
 package com.docchat.ingestion;
 
+import com.docchat.common.db.PgText;
 import com.docchat.document.DocumentFailureReason;
 import java.io.IOException;
 import java.io.InputStream;
@@ -59,13 +60,8 @@ class PdfTextExtractor {
         for (int number = 1; number <= pageCount; number++) {
             stripper.setStartPage(number);
             stripper.setEndPage(number);
-            pages.add(clean(stripper.getText(document)));
+            pages.add(PgText.clean(stripper.getText(document)));
         }
         return pages;
-    }
-
-    /** PostgreSQL rejects NUL characters, and its driver rejects unpaired surrogates. */
-    static String clean(String text) {
-        return text.replaceAll("[\\x00\\p{Cs}]", "").strip();
     }
 }

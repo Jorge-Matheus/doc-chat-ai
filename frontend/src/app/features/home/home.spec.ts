@@ -1,6 +1,9 @@
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { provideRouter } from '@angular/router';
+import { firstValueFrom } from 'rxjs';
+import { AuthService } from '../../core/auth/auth.service';
 import { SystemStatus } from '../../core/system/system-status.model';
 import { Home } from './home';
 
@@ -31,7 +34,7 @@ describe('Home', () => {
 
   beforeEach(async () => {
     TestBed.configureTestingModule({
-      providers: [provideHttpClient(), provideHttpClientTesting()],
+      providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting()],
     });
     http = TestBed.inject(HttpTestingController);
     fixture = TestBed.createComponent(Home);
@@ -40,6 +43,28 @@ describe('Home', () => {
 
   afterEach(() => {
     http.verify();
+  });
+
+  it('offers to create an account or sign in when no one is signed in', async () => {
+    await respondWith({ status: 'UP', database: 'UP', vectorExtension: 'UP', ai: 'UP' });
+
+    const links = Array.from(element().querySelectorAll('.actions a')).map((link) =>
+      link.getAttribute('href'),
+    );
+    expect(links).toEqual(['/register', '/login']);
+  });
+
+  it('leads a signed-in user to their questions and documents', async () => {
+    const auth = TestBed.inject(AuthService);
+    const refresh = firstValueFrom(auth.refresh());
+    http.expectOne('/api/auth/me').flush({ id: 'user-1', email: 'user@example.com' });
+    await refresh;
+    await respondWith({ status: 'UP', database: 'UP', vectorExtension: 'UP', ai: 'UP' });
+
+    const links = Array.from(element().querySelectorAll('.actions a')).map((link) =>
+      link.getAttribute('href'),
+    );
+    expect(links).toEqual(['/ask', '/documents']);
   });
 
   it('shows the loading state until the backend answers', async () => {

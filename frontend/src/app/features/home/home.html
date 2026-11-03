@@ -4,9 +4,18 @@
     DocChat AI answers questions about your PDF files and shows the pages each answer came from.
   </p>
   <p class="notice">
-    Create an account, upload PDF files and ask questions about them. Everything runs on your own
-    computer.
+    Upload PDF files, ask questions about them and check each answer against its source page.
+    Everything runs on your own computer.
   </p>
+  <div class="actions">
+    @if (auth.user()) {
+      <a matButton="filled" routerLink="/ask">Ask your documents</a>
+      <a matButton="outlined" routerLink="/documents">Your documents</a>
+    } @else {
+      <a matButton="filled" routerLink="/register">Create account</a>
+      <a matButton="outlined" routerLink="/login">Sign in</a>
+    }
+  </div>
 </section>
 
 <section class="status" aria-labelledby="status-title" aria-live="polite">

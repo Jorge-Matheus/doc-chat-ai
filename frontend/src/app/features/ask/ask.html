@@ -1,79 +1,131 @@
-<h1>Ask your documents</h1>
+<aside class="history" aria-label="Your conversations">
+  <a matButton="outlined" routerLink="/ask" data-testid="new-conversation">New conversation</a>
 
-@if (documentsLoadFailed()) {
-  <p class="message-error" role="alert" data-testid="documents-error">
-    Your documents could not be loaded. Reload the page to try again.
-  </p>
-} @else if (loadingDocuments()) {
-  <p data-testid="loading">Loading your documents...</p>
-} @else if (readyDocuments().length === 0) {
-  <p class="empty" data-testid="no-documents">
-    You have no documents ready yet. <a routerLink="/documents">Upload a PDF</a> to start asking.
-  </p>
-} @else {
-  <form [formGroup]="form" (ngSubmit)="submit()" novalidate>
-    <mat-form-field appearance="outline">
-      <mat-label>Search in</mat-label>
-      <mat-select formControlName="documentId" data-testid="scope">
-        <mat-option value="">All documents</mat-option>
-        @for (document of readyDocuments(); track document.id) {
-          <mat-option [value]="document.id">{{ document.filename }}</mat-option>
-        }
-      </mat-select>
-    </mat-form-field>
+  @if (historyLoadFailed() && history().length === 0) {
+    <p class="message-error" data-testid="history-error">Your conversations could not be loaded.</p>
+    <button matButton type="button" (click)="loadOlderConversations()">Try again</button>
+  } @else if (!historyLoading() && history().length === 0) {
+    <p class="empty" data-testid="history-empty">Your conversations will appear here.</p>
+  }
 
-    <mat-form-field appearance="outline">
-      <mat-label>Your question</mat-label>
-      <textarea
-        matInput
-        rows="3"
-        formControlName="question"
-        [attr.maxlength]="maxQuestionLength"
-        data-testid="question"
-      ></textarea>
-      <mat-error>Write your question first.</mat-error>
-    </mat-form-field>
+  @if (history().length > 0) {
+    <ul class="conversations">
+      @for (conversation of history(); track conversation.id) {
+        <li>
+          <a
+            data-testid="conversation"
+            [routerLink]="['/ask', conversation.id]"
+            [class.current]="conversation.id === currentId()"
+            [attr.aria-current]="conversation.id === currentId() ? 'page' : null"
+            >{{ conversation.title }}</a
+          >
+        </li>
+      }
+    </ul>
+  }
 
-    <button matButton="filled" type="submit" [disabled]="asking()">
-      {{ asking() ? 'Reading your documents...' : 'Ask' }}
+  @if (history().length > 0 && history().length < historyTotal()) {
+    <button
+      matButton
+      type="button"
+      data-testid="older-conversations"
+      [disabled]="historyLoading()"
+      (click)="loadOlderConversations()"
+    >
+      Show older
     </button>
-  </form>
-}
+  }
+</aside>
 
-<section class="result" aria-live="polite">
-  @if (asking()) {
-    <mat-progress-bar mode="indeterminate" aria-label="Preparing the answer" />
-    <p class="hint">
-      This runs on your computer. Answers usually take seconds, but the first one after a while can
-      take a minute or two.
-    </p>
+<section class="thread">
+  <div class="heading">
+    <h1>{{ currentTitle() ?? 'Ask your documents' }}</h1>
+    @if (currentTitle()) {
+      <button
+        matButton
+        type="button"
+        data-testid="delete-conversation"
+        (click)="confirmDeleteConversation()"
+      >
+        Delete
+      </button>
+    }
+  </div>
+
+  @if (loadingConversation()) {
+    <p data-testid="conversation-loading">Loading the conversation...</p>
   }
 
-  @if (error(); as message) {
-    <p class="message-error" role="alert" data-testid="ask-error">{{ message }}</p>
-  }
+  @if (conversationLoadError(); as message) {
+    <p class="message-error" role="alert" data-testid="conversation-error">{{ message }}</p>
+    <div>
+      <button matButton="outlined" type="button" (click)="retryLoadingConversation()">
+        Try again
+      </button>
+    </div>
+  } @else {
+    <div class="turns" aria-live="polite">
+      @for (turn of turns(); track turn.id) {
+        <app-turn-view data-testid="turn" [turn]="turn" (sourceOpened)="openSource($event)" />
+      }
 
-  @if (answer(); as current) {
-    @if (current.answered) {
-      <article class="answer" data-testid="answer">{{ current.text }}</article>
-
-      <h2>Sources</h2>
-      <ol class="citations">
-        @for (citation of current.citations; track citation.number) {
-          <li class="citation" data-testid="citation">
-            <div class="citation-title">
-              <span class="citation-number">[{{ citation.number }}]</span>
-              <span class="filename">{{ citation.filename }}</span>
-              <span class="page">page {{ citation.pageNumber }}</span>
-            </div>
-            <blockquote>{{ citation.excerpt }}</blockquote>
-          </li>
+      @if (pending(); as asked) {
+        @if (asked.conversationId === currentId()) {
+          <div #pendingQuestion class="pending" data-testid="pending">
+            <p class="question">{{ asked.question }}</p>
+            <mat-progress-bar mode="indeterminate" aria-label="Preparing the answer" />
+            <p class="hint">
+              This runs on your computer. Answers usually take seconds, but the first one after a
+              while can take a minute or two.
+            </p>
+          </div>
         }
-      </ol>
-    } @else {
-      <p class="not-found" data-testid="not-found">
-        The answer to this question was not found in your documents.
+      }
+
+      @if (error(); as message) {
+        <p class="message-error" role="alert" data-testid="ask-error">{{ message }}</p>
+      }
+    </div>
+
+    @if (documentsLoadFailed()) {
+      <p class="message-error" role="alert" data-testid="documents-error">
+        Your documents could not be loaded. Reload the page to try again.
       </p>
+    } @else if (loadingDocuments()) {
+      <p data-testid="loading">Loading your documents...</p>
+    } @else if (readyDocuments().length === 0) {
+      <p class="empty" data-testid="no-documents">
+        You have no documents ready yet. <a routerLink="/documents">Upload a PDF</a> to start asking.
+      </p>
+    } @else {
+      <form [formGroup]="form" (ngSubmit)="submit()" novalidate>
+        <mat-form-field appearance="outline" subscriptSizing="dynamic">
+          <mat-label>Search in</mat-label>
+          <mat-select formControlName="documentId" data-testid="scope">
+            <mat-option value="">All documents</mat-option>
+            @for (document of readyDocuments(); track document.id) {
+              <mat-option [value]="document.id">{{ document.filename }}</mat-option>
+            }
+          </mat-select>
+        </mat-form-field>
+
+        <mat-form-field appearance="outline">
+          <mat-label>{{ turns().length > 0 ? 'Ask a follow-up question' : 'Your question' }}</mat-label>
+          <textarea
+            matInput
+            rows="2"
+            formControlName="question"
+            data-testid="question"
+            [attr.maxlength]="maxQuestionLength"
+            (keydown)="onQuestionKeydown($event)"
+          ></textarea>
+          <mat-error>Write your question first.</mat-error>
+        </mat-form-field>
+
+        <button matButton="filled" type="submit" [disabled]="pending() !== null">
+          {{ pending() ? 'Reading your documents...' : 'Ask' }}
+        </button>
+      </form>
     }
   }
 </section>

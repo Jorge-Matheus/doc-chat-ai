@@ -52,6 +52,18 @@
           <span class="badge" [class]="'badge badge-' + document.status.toLowerCase()">
             {{ statusLabels[document.status] }}
           </span>
+          @if (document.status === 'READY') {
+            <a
+              matButton
+              target="_blank"
+              rel="noopener"
+              data-testid="open-file"
+              [href]="fileUrl(document)"
+              [attr.aria-label]="'Open ' + document.filename + ' in a new tab'"
+            >
+              Open
+            </a>
+          }
           <button
             matButton
             type="button"

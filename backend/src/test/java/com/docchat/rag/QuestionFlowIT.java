@@ -29,7 +29,6 @@ import org.springframework.jdbc.core.JdbcTemplate;
 class QuestionFlowIT {
 
     private static final String PASSWORD = "correct horse battery";
-    private static final String DEFAULT_REPLY = "The answer is in the first source [1].";
 
     @Value("${local.server.port}")
     private int port;
@@ -52,8 +51,7 @@ class QuestionFlowIT {
 
     @AfterEach
     void restoreModels() {
-        chatModel.setReply(DEFAULT_REPLY);
-        chatModel.setFailing(false);
+        chatModel.reset();
         embeddingModel.setFailing(false);
     }
 
@@ -63,12 +61,12 @@ class QuestionFlowIT {
 
         String body = ask(alice, "What is the termination notice?").body();
 
-        assertThat((Boolean) JsonPath.read(body, "$.answered")).isTrue();
-        assertThat((String) JsonPath.read(body, "$.text")).isEqualTo(DEFAULT_REPLY);
-        assertThat((Integer) JsonPath.read(body, "$.citations[0].number")).isEqualTo(1);
-        assertThat((String) JsonPath.read(body, "$.citations[0].filename")).isEqualTo("contract.pdf");
-        assertThat((Integer) JsonPath.read(body, "$.citations[0].pageNumber")).isEqualTo(2);
-        assertThat((String) JsonPath.read(body, "$.citations[0].excerpt")).contains("sixty days notice");
+        assertThat((Boolean) JsonPath.read(body, "$.turns[0].answered")).isTrue();
+        assertThat((String) JsonPath.read(body, "$.turns[0].text")).isEqualTo(FakeChatModel.DEFAULT_REPLY);
+        assertThat((Integer) JsonPath.read(body, "$.turns[0].citations[0].number")).isEqualTo(1);
+        assertThat((String) JsonPath.read(body, "$.turns[0].citations[0].filename")).isEqualTo("contract.pdf");
+        assertThat((Integer) JsonPath.read(body, "$.turns[0].citations[0].pageNumber")).isEqualTo(2);
+        assertThat((String) JsonPath.read(body, "$.turns[0].citations[0].excerpt")).contains("sixty days notice");
     }
 
     @Test
@@ -92,8 +90,8 @@ class QuestionFlowIT {
 
         String body = ask(bob, "Project orchid budget is confidential").body();
 
-        assertThat((Boolean) JsonPath.read(body, "$.answered")).isFalse();
-        assertThat((List<?>) JsonPath.read(body, "$.citations")).isEmpty();
+        assertThat((Boolean) JsonPath.read(body, "$.turns[0].answered")).isFalse();
+        assertThat((List<?>) JsonPath.read(body, "$.turns[0].citations")).isEmpty();
         assertThat(chatModel.calls()).as("the model must not be asked").isEqualTo(callsBefore);
     }
 
@@ -103,11 +101,11 @@ class QuestionFlowIT {
         ApiClient bob = signedInUser();
 
         HttpResponse<String> response = bob.postJson(
-                "/api/questions",
+                "/api/conversations",
                 "{\"question\":\"Project orchid budget\",\"documentIds\":[\"%s\"]}".formatted(aliceDocument));
 
-        assertThat(response.statusCode()).isEqualTo(200);
-        assertThat((Boolean) JsonPath.read(response.body(), "$.answered")).isFalse();
+        assertThat(response.statusCode()).isEqualTo(201);
+        assertThat((Boolean) JsonPath.read(response.body(), "$.turns[0].answered")).isFalse();
     }
 
     @Test
@@ -116,10 +114,10 @@ class QuestionFlowIT {
         String second = upload(alice, "second.pdf", "Project orchid schedule details");
 
         HttpResponse<String> response = alice.postJson(
-                "/api/questions",
+                "/api/conversations",
                 "{\"question\":\"Project orchid budget details\",\"documentIds\":[\"%s\"]}".formatted(second));
 
-        assertThat((String) JsonPath.read(response.body(), "$.citations[0].filename")).isEqualTo("second.pdf");
+        assertThat((String) JsonPath.read(response.body(), "$.turns[0].citations[0].filename")).isEqualTo("second.pdf");
     }
 
     @Test
@@ -129,7 +127,7 @@ class QuestionFlowIT {
 
         String body = ask(alice, "Favourite pizza topping recipes").body();
 
-        assertThat((Boolean) JsonPath.read(body, "$.answered")).isFalse();
+        assertThat((Boolean) JsonPath.read(body, "$.turns[0].answered")).isFalse();
         assertThat(chatModel.calls()).isEqualTo(callsBefore);
     }
 
@@ -140,7 +138,7 @@ class QuestionFlowIT {
 
         String body = ask(alice, "What is the termination notice?").body();
 
-        assertThat((Boolean) JsonPath.read(body, "$.answered")).isFalse();
+        assertThat((Boolean) JsonPath.read(body, "$.turns[0].answered")).isFalse();
     }
 
     @Test
@@ -148,11 +146,11 @@ class QuestionFlowIT {
         upload(alice, "contract.pdf", "Termination requires sixty days notice");
 
         chatModel.setReply("It is ninety days, from what I remember.");
-        assertThat((Boolean) JsonPath.read(ask(alice, "What is the termination notice?").body(), "$.answered"))
+        assertThat((Boolean) JsonPath.read(ask(alice, "What is the termination notice?").body(), "$.turns[0].answered"))
                 .isFalse();
 
         chatModel.setReply("It is ninety days [9].");
-        assertThat((Boolean) JsonPath.read(ask(alice, "What is the termination notice?").body(), "$.answered"))
+        assertThat((Boolean) JsonPath.read(ask(alice, "What is the termination notice?").body(), "$.turns[0].answered"))
                 .isFalse();
     }
 
@@ -187,7 +185,7 @@ class QuestionFlowIT {
         alice.delete("/api/documents/" + id);
 
         assertThat(countChunks(id)).isZero();
-        assertThat((Boolean) JsonPath.read(ask(alice, "Termination notice").body(), "$.answered")).isFalse();
+        assertThat((Boolean) JsonPath.read(ask(alice, "Termination notice").body(), "$.turns[0].answered")).isFalse();
     }
 
     @Test
@@ -204,17 +202,17 @@ class QuestionFlowIT {
 
     @Test
     void questionsAreValidatedAndRequireAuthentication() {
-        assertThat(alice.postJson("/api/questions", "{\"question\":\"   \"}").statusCode()).isEqualTo(400);
+        assertThat(alice.postJson("/api/conversations", "{\"question\":\"   \"}").statusCode()).isEqualTo(400);
         assertThat(alice.postJson(
-                                "/api/questions",
+                                "/api/conversations",
                                 "{\"question\":\"%s\"}".formatted("a".repeat(2001)))
                         .statusCode())
                 .isEqualTo(400);
         assertThat(new ApiClient(port)
-                        .postJson("/api/questions", "{\"question\":\"Anything\"}")
+                        .postJson("/api/conversations", "{\"question\":\"Anything\"}")
                         .statusCode())
                 .isEqualTo(401);
-        assertThat(alice.postJsonWithoutCsrf("/api/questions", "{\"question\":\"Anything\"}")
+        assertThat(alice.postJsonWithoutCsrf("/api/conversations", "{\"question\":\"Anything\"}")
                         .statusCode())
                 .isEqualTo(403);
     }
@@ -236,7 +234,7 @@ class QuestionFlowIT {
     }
 
     private HttpResponse<String> ask(ApiClient client, String question) {
-        return client.postJson("/api/questions", "{\"question\":\"%s\"}".formatted(question));
+        return client.postJson("/api/conversations", "{\"question\":\"%s\"}".formatted(question));
     }
 
     private String awaitFinished(ApiClient client, String id) {

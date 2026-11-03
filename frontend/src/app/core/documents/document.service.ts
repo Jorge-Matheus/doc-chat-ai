@@ -1,7 +1,7 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
-import { DocumentList, UserDocument } from './document.model';
+import { DocumentList, DocumentPage, UserDocument } from './document.model';
 
 const DOCUMENTS_URL = '/api/documents';
 
@@ -21,5 +21,15 @@ export class DocumentService {
 
   delete(id: string): Observable<void> {
     return this.http.delete<void>(`${DOCUMENTS_URL}/${id}`);
+  }
+
+  getPage(id: string, pageNumber: number): Observable<DocumentPage> {
+    return this.http.get<DocumentPage>(`${DOCUMENTS_URL}/${id}/pages/${pageNumber}`);
+  }
+
+  /** For a link. The browser's PDF reader uses the fragment to open at that page, if it supports it. */
+  fileUrl(id: string, pageNumber?: number): string {
+    const url = `${DOCUMENTS_URL}/${id}/file`;
+    return pageNumber === undefined ? url : `${url}#page=${pageNumber}`;
   }
 }

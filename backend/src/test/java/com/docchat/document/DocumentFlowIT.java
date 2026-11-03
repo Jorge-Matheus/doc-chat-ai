@@ -100,6 +100,82 @@ class DocumentFlowIT {
     }
 
     @Test
+    void theTextOfAPageCanBeRead() {
+        String id = awaitReady(alice.upload("contract.pdf", TestPdfs.withPages("Text of page one", "", "Page three")));
+
+        String first = alice.get("/api/documents/" + id + "/pages/1").body();
+        assertThat((String) JsonPath.read(first, "$.documentId")).isEqualTo(id);
+        assertThat((String) JsonPath.read(first, "$.filename")).isEqualTo("contract.pdf");
+        assertThat((Integer) JsonPath.read(first, "$.pageNumber")).isEqualTo(1);
+        assertThat((Integer) JsonPath.read(first, "$.pageCount")).isEqualTo(3);
+        assertThat((String) JsonPath.read(first, "$.text")).isEqualTo("Text of page one");
+
+        assertThat((String) JsonPath.read(alice.get("/api/documents/" + id + "/pages/2").body(), "$.text")).isEmpty();
+
+        HttpResponse<String> beyond = alice.get("/api/documents/" + id + "/pages/4");
+        assertThat(beyond.statusCode()).isEqualTo(404);
+        assertThat((String) JsonPath.read(beyond.body(), "$.code")).isEqualTo("PAGE_NOT_FOUND");
+        assertThat(alice.get("/api/documents/" + id + "/pages/0").statusCode()).isEqualTo(400);
+    }
+
+    @Test
+    void theOriginalFileIsServedByteForByte() {
+        byte[] pdf = TestPdfs.withPages("Original content");
+        String id = awaitReady(alice.upload("relatório final.pdf", pdf));
+
+        HttpResponse<byte[]> response = alice.getBytes("/api/documents/" + id + "/file");
+
+        assertThat(response.statusCode()).isEqualTo(200);
+        assertThat(response.body()).isEqualTo(pdf);
+        assertThat(response.headers().firstValue("Content-Type")).contains("application/pdf");
+        assertThat(response.headers().firstValue("X-Content-Type-Options")).contains("nosniff");
+        assertThat(response.headers().firstValue("Content-Disposition"))
+                .hasValueSatisfying(value -> assertThat(value)
+                        .startsWith("inline; ")
+                        .contains("relat%C3%B3rio%20final.pdf"));
+    }
+
+    @Test
+    void aFileThatIsAlsoAWebPageIsStillServedAsAPdf() {
+        byte[] polyglot = "%PDF-1.4 <html><script>alert(1)</script></html>".getBytes(StandardCharsets.UTF_8);
+        String id = JsonPath.read(alice.upload("page.pdf", polyglot).body(), "$.id");
+
+        HttpResponse<byte[]> response = alice.getBytes("/api/documents/" + id + "/file");
+
+        assertThat(response.statusCode()).isEqualTo(200);
+        assertThat(response.headers().firstValue("Content-Type")).contains("application/pdf");
+        assertThat(response.headers().firstValue("X-Content-Type-Options")).contains("nosniff");
+    }
+
+    @Test
+    void aFileMissingFromTheDiskIsReportedWithoutInternalDetails() throws Exception {
+        String id = uploadAndWait(alice, "lost.pdf");
+        Files.delete(fileOf(id));
+
+        HttpResponse<String> response = alice.get("/api/documents/" + id + "/file");
+
+        assertThat(response.statusCode()).isEqualTo(404);
+        assertThat((String) JsonPath.read(response.body(), "$.code")).isEqualTo("FILE_NOT_AVAILABLE");
+        assertThat(response.body()).doesNotContain(storageDirectory.toString());
+    }
+
+    @Test
+    void otherUsersCannotReachThePagesOrTheFile() {
+        String id = uploadAndWait(alice, "private.pdf");
+        ApiClient bob = signedInUser();
+
+        HttpResponse<String> page = bob.get("/api/documents/" + id + "/pages/1");
+        assertThat(page.statusCode()).isEqualTo(404);
+        assertThat(page.body()).doesNotContain("private.pdf");
+        HttpResponse<String> file = bob.get("/api/documents/" + id + "/file");
+        assertThat(file.statusCode()).isEqualTo(404);
+        assertThat(file.body()).doesNotContain("private.pdf");
+
+        assertThat(alice.get("/api/documents/" + id + "/pages/1").statusCode()).isEqualTo(200);
+        assertThat(alice.get("/api/documents/" + id + "/file").statusCode()).isEqualTo(200);
+    }
+
+    @Test
     void deleteRemovesTheRowThePagesAndTheFile() {
         String id = uploadAndWait(alice, "to-delete.pdf");
 
@@ -192,6 +268,13 @@ class DocumentFlowIT {
         assertThat(response.statusCode()).isEqualTo(202);
         String id = JsonPath.read(response.body(), "$.id");
         awaitFinished(client, id);
+        return id;
+    }
+
+    private String awaitReady(HttpResponse<String> upload) {
+        assertThat(upload.statusCode()).isEqualTo(202);
+        String id = JsonPath.read(upload.body(), "$.id");
+        assertThat((String) JsonPath.read(awaitFinished(alice, id), "$.status")).isEqualTo("READY");
         return id;
     }
 

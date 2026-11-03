@@ -79,7 +79,8 @@ class ApplicationWithoutDatabaseTest {
                 .andExpect(jsonPath("$.paths['/api/auth/register'].post").exists())
                 .andExpect(jsonPath("$.paths['/api/auth/login'].post").exists())
                 .andExpect(jsonPath("$.paths['/api/documents'].post").exists())
-                .andExpect(jsonPath("$.paths['/api/questions'].post").exists());
+                .andExpect(jsonPath("$.paths['/api/conversations'].post").exists())
+                .andExpect(jsonPath("$.paths['/api/documents/{id}/pages/{pageNumber}'].get").exists());
         mockMvc.perform(get("/swagger-ui/index.html"))
                 .andExpect(status().isOk())
                 .andExpect(content().string(containsString("swagger")));

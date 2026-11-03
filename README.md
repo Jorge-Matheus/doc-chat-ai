@@ -4,7 +4,7 @@ DocChat AI is a full-stack platform, under construction, for asking questions ab
 
 It runs only on your own machine. Your documents never leave it: there is no cloud service and no deployment, and it uses only free software.
 
-> **Current state:** accounts, PDF upload and questions with cited answers work (Phases 1 to 3). Conversation history and a viewer for the source pages are not implemented yet. See [Project status](#project-status).
+> **Current state:** accounts, PDF upload, conversations with cited answers and a viewer for the source pages work (Phases 1 to 4). The automated browser tests, observability and load tests are not implemented yet. See [Project status](#project-status).
 
 ## The problem
 
@@ -17,11 +17,11 @@ Finding a specific answer in a long document, such as a 40-page contract, means 
 | 1. Foundation | Backend, frontend, database, migrations, health checks, Docker | Complete |
 | 2. Authentication and documents | Accounts, authorization, PDF upload and extraction | Complete |
 | 3. RAG | Chunking, embeddings, vector search, LLM answers with citations | Complete |
-| 4. Conversations and interface | History, source viewer, complete UI flow | Planned |
+| 4. Conversations and interface | History, source viewer, complete UI flow | Complete |
 | 5. Tests and robustness | End-to-end and security tests, failure recovery | Planned |
 | 6. Performance and documentation | Observability, load tests, final documentation | Planned |
 
-**How Phases 1 to 3 were checked:** the automated tests listed under [Tests](#tests), which use fake models, plus runs on the developer's machine of the Compose stack and of the development setup. With the stack running, stopping the database, the backend and the AI service was tried by hand, as was upgrading a database that already had documents. The complete flow was run in headless Microsoft Edge with the real models, including a PDF of 500 pages. Those browser checks use one-off scripts that are not part of this repository, so they are not repeated automatically yet.
+**How Phases 1 to 4 were checked:** the automated tests listed under [Tests](#tests), which use fake models, plus runs on the developer's machine of the Compose stack and of the development setup. With the stack running, stopping the database, the backend and the AI service was tried by hand, as was upgrading a database that already had documents. The complete flow was run in headless Microsoft Edge with the real models, including a PDF of 500 pages, conversations with follow-up questions, the source viewer and the original PDF opening at the cited page. Those browser checks use one-off scripts that are not part of this repository, so they are not repeated automatically yet. The quality of answers was measured on a few short documents written for the tests, not on real ones.
 
 ## Architecture
 
@@ -31,7 +31,7 @@ The backend is a [modular monolith](docs/adr/0001-modular-monolith.md). The brow
 flowchart TD
     Browser[Browser] --> Web["Angular app<br/>nginx in Docker, ng serve in development"]
     Web -->|"/api, same origin"| API["Spring Boot REST API"]
-    API --> DB[("PostgreSQL + pgvector<br/>accounts, sessions, documents, pages, passages")]
+    API --> DB[("PostgreSQL + pgvector<br/>accounts, sessions, documents, pages, passages, conversations")]
     API --> Files["PDF files on the local disk"]
     API --> AI["Ollama on the local GPU<br/>embedding and language models"]
 ```
@@ -47,17 +47,20 @@ Backend packages today:
 | `com.docchat.storage` | PDF files on the local disk and the storage health indicator |
 | `com.docchat.ingestion` | Background text extraction, splitting and embedding, with a bounded queue |
 | `com.docchat.ai` | Access to the local models and their availability |
-| `com.docchat.rag` | Passage search, the prompt, and answers with verified citations |
-
-A new module (`chat`) is added when it has real code.
+| `com.docchat.rag` | Passage search, rewriting of follow-up questions, the prompts, and answers with verified citations |
+| `com.docchat.chat` | Conversations: storing questions, answers and citations, and their ownership |
 
 **Processing a document.** An upload is answered right after the file is stored, and the document starts as `PROCESSING`. A small pool of workers extracts the text of each page, splits it into overlapping passages that never cross a page, embeds them and saves everything in one transaction. The document then becomes `READY`, or `FAILED` with a reason. The interface checks every two seconds while a document is processing. Documents interrupted by a shutdown are processed again at the next startup.
 
 **Answering a question.**
 
-1. The question is embedded, and the closest passages among the user's own `READY` documents are found. Those too different from the question are dropped. If none remains, the answer is "not found" and the language model is not called.
-2. The language model receives the passages, numbered, and must answer only from them, citing their numbers. It never sees file names or page numbers.
-3. The server checks the reply. Citations of passages the model was not given are removed, and a reply with no valid citation counts as "not found". Each remaining number becomes the real file and page, which is how citations stay truthful.
+1. In a conversation with earlier turns, the language model first rewrites the question so that it stands alone, and "and the penalty?" becomes "what is the penalty of the contract?". The interface shows this as "Searched for".
+2. The question is embedded, and the closest passages among the user's own `READY` documents are found. Those too different from the question are dropped. If none remains, the answer is "not found" and the language model is not asked to answer.
+3. The language model receives the passages, numbered, and must answer only from them, citing their numbers. It never sees file names or page numbers.
+4. The server checks the reply. Citations of passages the model was not given are removed, and a reply with no valid citation counts as "not found". Each remaining number becomes the real file and page, which is how citations stay truthful.
+5. The question and its answer are stored together. If the model failed, nothing is stored and the question goes back to the input.
+
+**Checking a source.** Each citation opens the text of its page, with the cited passage marked, and from there the original PDF at that page. See [ADR 0008](docs/adr/0008-conversations-and-follow-up-questions.md).
 
 ## Tech stack
 
@@ -126,7 +129,7 @@ Measured on an RTX 3060 with 12 GB and 16 GB of RAM, with the whole stack and de
 |---|---|
 | Layers on the GPU | 100% of both models |
 | Peak GPU memory | About 8.7 GB of 12 GB, including what the desktop uses |
-| Typical answer | 1 to 3 seconds |
+| Typical answer | 1 to 3 seconds, and follow-up questions take about the same |
 | First answer after the model is unloaded | About 20 seconds, and 124 seconds in the worst case seen, with under 2 GB of RAM free |
 | Processing a PDF of 500 pages | 110 seconds |
 
@@ -159,8 +162,14 @@ The API is documented with OpenAPI at `/v3/api-docs`, and Swagger UI is at `/swa
 | `POST /api/documents` | Uploads a PDF of up to 25 MB as the multipart part `file`. Answers 202. |
 | `GET /api/documents?page=0&size=20` | The user's documents, newest first, with `items`, `page`, `size` and `totalItems`. |
 | `GET /api/documents/{id}` | One document, with its `status`, `failureReason` and `pageCount`. |
-| `DELETE /api/documents/{id}` | Deletes the document, its text, its passages and its file. Answers 204. |
-| `POST /api/questions` | Answers a question from JSON with `question` (up to 2000 characters) and optionally `documentIds`. Answers 503 with the code `AI_UNAVAILABLE` when the models cannot be reached. |
+| `GET /api/documents/{id}/pages/{pageNumber}` | The text extracted from one page, with `filename`, `pageNumber`, `pageCount` and `text`. |
+| `GET /api/documents/{id}/file` | The original PDF, to be displayed in the browser. |
+| `DELETE /api/documents/{id}` | Deletes the document, its text, its passages and its file. Conversations stay, and citations of it say the document was deleted. Answers 204. |
+| `POST /api/conversations` | Starts a conversation from JSON with `question` (up to 2000 characters) and optionally `documentIds`. Answers 201 with the conversation and its first turn, or 503 with the code `AI_UNAVAILABLE` when the models cannot be reached, and then nothing is stored. |
+| `POST /api/conversations/{id}/turns` | Asks another question in a conversation, with the same JSON. It can refer to earlier questions. Answers 201 with the turn, or 503 as above. |
+| `GET /api/conversations?page=0&size=20` | The user's conversations, most recently active first, with `items`, `page`, `size` and `totalItems`. |
+| `GET /api/conversations/{id}` | One conversation with all its `turns`. |
+| `DELETE /api/conversations/{id}` | Deletes a conversation with its questions and answers. Answers 204. |
 | `GET /api/system/status` | Real state of each dependency, including the AI models. Answers 200 while the backend runs. Public. |
 | `GET /actuator/health/readiness` | Readiness probe. Answers 503 if the database, pgvector or the file storage is unavailable. The AI service is left out on purpose, because accounts and documents work without it. Public. |
 | `GET /actuator/health/liveness` | Liveness probe. Public. |
@@ -175,10 +184,13 @@ curl http://localhost:8080/api/system/status
 { "status": "UP", "database": "UP", "vectorExtension": "UP", "ai": "UP" }
 ```
 
-An answer looks like this. When the documents do not contain the answer, `answered` is `false`, `text` is `null` and `citations` is empty.
+A turn looks like this. When the documents do not contain the answer, `answered` is `false`, `text` is `null` and `citations` is empty. `interpretedQuestion` is what was searched for, and it is `null` when that is the question as it was asked. Once a document is deleted, `documentId` and `excerpt` are `null` in its citations.
 
 ```json
 {
+  "id": 42,
+  "question": "And the notice?",
+  "interpretedQuestion": "What is the notice period of the contract?",
   "answered": true,
   "text": "The notice period is 60 days [1].",
   "citations": [
@@ -189,7 +201,8 @@ An answer looks like this. When the documents do not contain the answer, `answer
       "pageNumber": 2,
       "excerpt": "Clause 7. The contract can be terminated with 60 days notice..."
     }
-  ]
+  ],
+  "createdAt": "2026-11-03T12:00:00Z"
 }
 ```
 
@@ -226,10 +239,12 @@ This version is meant to run on your own machine and **must not be exposed publi
 - Passwords are hashed with BCrypt.
 - Sessions live in PostgreSQL behind an HttpOnly, SameSite=Lax cookie, and signing in replaces the session id.
 - Requests that change data need a CSRF token.
-- Each user reaches only their own documents and passages. Another user's document answers 404, so its existence is not revealed.
+- Each user reaches only their own documents, passages, pages, files and conversations. Another user's document or conversation answers 404, so its existence is not revealed.
 - Uploads are checked by their PDF signature and size, and files on disk are named after the document id, never after the name the client sent.
-- Document text is treated as untrusted when it reaches the model, and it is displayed as text, never as markup.
-- Questions and document contents are not written to the logs.
+- Original files are always served as `application/pdf` with `nosniff`, so a file that is also a valid web page cannot run as a page of this site.
+- Document text is treated as untrusted when it reaches the model, including when earlier answers are used to understand a follow-up, and it is displayed as text, never as markup.
+- Questions and answers are stored in the database with the conversation. They and document contents are not written to the logs.
+- Deleting a document removes its passages from citations, because citations point at passages instead of copying them. The text of answers stays until their conversation is deleted, and the confirmation says so.
 - Compose binds every published port to 127.0.0.1.
 - Only the `health` and `info` Actuator endpoints are exposed, and health responses omit component details.
 - Error responses never include stack traces or internal messages.
@@ -253,7 +268,11 @@ This version is meant to run on your own machine and **must not be exposed publi
 - A local model can misread a passage, so confirm important answers against the cited excerpt.
 - Scanned PDFs are refused, because there is no text recognition (OCR).
 - Passages never cross a page, so a sentence spanning two pages is cut in two.
-- Questions are answered one at a time, with no memory of earlier questions (Phase 4).
+- Understanding a follow-up uses the model, which can misread it, and the answer is then about what it searched for. The interface shows that as "Searched for". In tests on short documents, 62 of 69 follow-ups were answered correctly, and 5 of the 7 misses were the model refusing after a correct rewrite.
+- The model sometimes says "not found" for a fact that needs a small inference, such as reading "Curitiba, Paraná" as a city and its state. This is safe, but it is a miss.
+- The documents chosen in "Search in" are not stored, so reopening a conversation goes back to all documents.
+- Conversations can be listed, opened and deleted, but not renamed or searched.
+- The source viewer shows extracted text, which loses tables and layout. The original PDF is one click away. Opening it at the cited page depends on the browser's PDF reader, and was confirmed only in Microsoft Edge.
 - The answer appears all at once, not word by word.
 - Instructions hidden in a PDF were never obeyed in tests with the real model, but they sometimes made it answer "not found", and this risk cannot be fully eliminated.
 - The threshold for dropping unrelated passages was measured on a small set of questions.
@@ -261,7 +280,6 @@ This version is meant to run on your own machine and **must not be exposed publi
 - There is no email verification, password reset or account deletion.
 - Login has no rate limit, and uploads have no per-user quota.
 - Processing one PDF has no time limit. The number of workers is limited, so a pathological file can hold a worker but cannot exhaust the server's threads.
-- A stored PDF cannot be downloaded or viewed yet (Phase 4).
 - Swagger UI's "Try it out" does not send the CSRF token, so only read requests work there.
 - The UI has automated component tests but no automated browser tests yet (Phase 5).
 - Mockito prints a self-attach warning during backend tests, and PDFBox logs a fallback font warning for PDFs using standard fonts. Neither affects results.
@@ -275,3 +293,4 @@ This version is meant to run on your own machine and **must not be exposed publi
 - [ADR 0005: PDF files on the local disk](docs/adr/0005-local-file-storage.md)
 - [ADR 0006: Angular Material for the interface](docs/adr/0006-angular-material.md)
 - [ADR 0007: Local AI with Ollama](docs/adr/0007-local-ai-with-ollama.md)
+- [ADR 0008: Conversations and follow-up questions](docs/adr/0008-conversations-and-follow-up-questions.md)

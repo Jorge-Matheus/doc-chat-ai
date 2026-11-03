@@ -55,11 +55,6 @@ class PdfTextExtractorTest {
         assertFailsWith(TestPdfs.corrupt(), DocumentFailureReason.NOT_READABLE);
     }
 
-    @Test
-    void removesCharactersThatTheDatabaseRejects() {
-        assertThat(PdfTextExtractor.clean("  a\u0000b\uD83Dc 😀  ")).isEqualTo("abc 😀");
-    }
-
     private List<String> extract(byte[] pdf) {
         return extractor.extractPages(new ByteArrayInputStream(pdf));
     }

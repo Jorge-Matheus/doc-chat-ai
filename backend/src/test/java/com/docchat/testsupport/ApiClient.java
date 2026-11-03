@@ -37,6 +37,17 @@ public final class ApiClient {
         return send(request(path).GET().build());
     }
 
+    public HttpResponse<byte[]> getBytes(String path) {
+        try {
+            return http.send(request(path).GET().build(), BodyHandlers.ofByteArray());
+        } catch (IOException ex) {
+            throw new UncheckedIOException(ex);
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(ex);
+        }
+    }
+
     public HttpResponse<String> delete(String path) {
         return send(withCsrf(request(path)).DELETE().build());
     }
