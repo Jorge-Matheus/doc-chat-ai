@@ -40,7 +40,7 @@ These are captures of the real application, using sample documents and real answ
 | 5. Tests and robustness | End-to-end and security tests, failure recovery | Complete |
 | 6. Performance and documentation | Observability, load tests, final documentation | Complete |
 
-Automated deployment and hosted continuous integration are left out by decision, because the project runs only on its owner's machine. See the [Roadmap](#roadmap).
+There is no continuous integration and no deployment of any kind, by decision, because the project runs only on its owner's machine.
 
 **How it was checked:** the automated tests listed under [Tests](#tests), which include the complete flow in a real browser, stopping the database, the backend and the AI service, and restarting the backend during processing. They run in headless Microsoft Edge on the developer's machine, and nothing runs them automatically on a server. Separate commands run the same browser against the real models. A PDF of 500 pages with the real models, opening the original PDF at the cited page, and upgrading a database that already had documents were each checked once by hand and are not repeated automatically. The quality of answers was measured on a few short documents written for the tests, not on real ones.
 
@@ -495,7 +495,6 @@ None of this exists yet, and it is listed in no particular order.
 - Password reset, email verification and account deletion.
 - A limit on login attempts.
 - An approximate vector index, if accounts grow beyond what the [measurements](docs/performance.md) cover.
-- Hosted continuous integration and automated deployment, which are left out on purpose for now, because the project runs only on its owner's machine.
 
 ## Architecture decisions
 

@@ -124,11 +124,11 @@ docker compose down -v       # Also DELETES the database, the uploaded files and
 
 ## Working rules
 
-- The project stays on the user's machine. Do not add AWS or any other cloud service, deployment or hosted CI.
+- The project stays on the user's machine. It has no CI/CD and no deployment. Do not add them in any form, or AWS or any other cloud service.
 - The main Compose stack holds the user's real account and documents, and stopping its services interrupts their use of it, so try outages on the stack in `e2e/compose.yaml`. Never run `docker compose down -v` or remove its volumes to clear test data: accounts created for tests use `@example.com`, and only those and their files may be deleted.
 - Use only what is free. Do not try, propose or configure anything paid.
 - Commits stay local. Do not add a remote or push. Make one commit at the end of each phase, on a branch for that phase.
-- Each phase's branch builds on the previous one, and `phase-6-performance-and-docs` is the only one with the whole application. Until the user decides to merge it, `main` holds only Phase 1, so do not base work or comparisons on `main`, and do not merge without asking. The branches of Phases 2 to 5 do not compile, because they lack the `com.docchat.storage` package.
+- `main` has the whole application. The phase branches remain as history, and those of Phases 2 to 5 do not compile, because they lack the `com.docchat.storage` package.
 - Code, documentation and UI text are in English.
 - Consult the user before important decisions: base versions, deviations from the phase plan, machine installs, and anything else with a lasting effect. Significant decisions are recorded as ADRs in `docs/adr/`.
 - Never report something as verified unless it was executed. If a check could not be run, say so and record it in the README's "Project status" section.
