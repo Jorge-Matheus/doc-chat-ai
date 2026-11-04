@@ -7,6 +7,9 @@
   "scripts": {
     "test": "playwright test",
     "test:real": "playwright test -c playwright.real.config.ts",
+    "load": "node load/run.ts",
+    "load:real": "node load/run.ts --real",
+    "load:scale": "node load/run.ts --scale",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {

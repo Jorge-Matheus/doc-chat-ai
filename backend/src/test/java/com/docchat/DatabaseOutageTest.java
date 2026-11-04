@@ -57,6 +57,7 @@ class DatabaseOutageTest {
         assertThat(signedIn.get("/actuator/health/liveness").statusCode()).isEqualTo(200);
         assertThat(signedIn.get("/actuator/health/readiness").statusCode()).isEqualTo(503);
         assertThat(signedIn.get("/actuator/health").statusCode()).isEqualTo(503);
+        assertThat(signedIn.get("/actuator/prometheus").statusCode()).isEqualTo(200);
     }
 
     @Test

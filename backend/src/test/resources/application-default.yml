@@ -6,6 +6,12 @@ spring:
       base-url: http://127.0.0.1:1
     retry:
       max-attempts: 1
+management:
+  prometheus:
+    metrics:
+      export:
+        # Spring Boot turns off exporting metrics in tests, and these check the endpoint.
+        enabled: true
 docchat:
   storage:
     directory: target/test-storage

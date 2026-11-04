@@ -24,6 +24,9 @@ import com.docchat.document.DocumentUploadedEvent;
 import com.docchat.document.EmbeddedChunk;
 import com.docchat.storage.FileStorage;
 import com.docchat.testsupport.TestPdfs;
+import io.micrometer.core.instrument.observation.DefaultMeterObservationHandler;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import io.micrometer.observation.ObservationRegistry;
 import java.io.ByteArrayInputStream;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -56,14 +59,84 @@ class DocumentProcessorTest {
     private final FileStorage storage = mock(FileStorage.class);
     private final TextEmbedder embedder = mock(TextEmbedder.class);
     private final PdfTextExtractor extractor = new PdfTextExtractor(properties(Duration.ofSeconds(30)));
+    private final SimpleMeterRegistry metrics = new SimpleMeterRegistry();
+    private final ObservationRegistry observations = ObservationRegistry.create();
     private final DocumentProcessor processor = processorWith(new SyncTaskExecutor(), Duration.ofSeconds(30));
 
     @BeforeEach
     void setUp() {
+        observations.observationConfig().observationHandler(new DefaultMeterObservationHandler(metrics));
         when(embedder.embedAll(anyList())).thenAnswer(call -> {
             List<String> texts = call.getArgument(0);
             return texts.stream().map(text -> VECTOR).toList();
         });
+    }
+
+    @Test
+    void measuresEachStageAndHowADocumentEnded() {
+        givenProcessingDocument(TestPdfs.withPages("Page text"));
+
+        processor.process(ID);
+
+        assertThat(processingCount("ready")).isEqualTo(1);
+        for (String stage : List.of("extraction", "embedding", "saving")) {
+            assertThat(metrics.get("docchat.document.stage")
+                            .tag("stage", stage)
+                            .tag("error", "none")
+                            .timer()
+                            .count())
+                    .as(stage)
+                    .isEqualTo(1);
+        }
+    }
+
+    @Test
+    void measuresWhyADocumentFailedAndInWhichStage() {
+        givenProcessingDocument(TestPdfs.corrupt());
+
+        processor.process(ID);
+
+        assertThat(processingCount("not_readable")).isEqualTo(1);
+        assertThat(metrics.get("docchat.document.stage")
+                        .tag("stage", "extraction")
+                        .tag("error", "PdfExtractionException")
+                        .timer()
+                        .count())
+                .isEqualTo(1);
+    }
+
+    @Test
+    void measuresADocumentLeftForLaterAsInterrupted() {
+        givenProcessingDocument(TestPdfs.withPages("Page text"));
+        doThrow(new CannotCreateTransactionException("no connection"))
+                .when(repository)
+                .completeProcessing(any(), any(), any());
+
+        processor.process(ID);
+
+        assertThat(processingCount("interrupted")).isEqualTo(1);
+    }
+
+    @Test
+    void measuresADocumentPastTheTimeLimit() {
+        givenProcessingDocument(TestPdfs.withPages("Page text"));
+        CountDownLatch released = new CountDownLatch(1);
+        when(embedder.embedAll(anyList())).thenAnswer(call -> {
+            released.await();
+            return List.of(VECTOR);
+        });
+
+        try {
+            processorWith(new SyncTaskExecutor(), Duration.ofMillis(100)).process(ID);
+
+            assertThat(processingCount("processing_timed_out")).isEqualTo(1);
+        } finally {
+            released.countDown();
+        }
+    }
+
+    private long processingCount(String outcome) {
+        return metrics.get("docchat.document.processing").tag("outcome", outcome).timer().count();
     }
 
     @Test
@@ -347,7 +420,8 @@ class DocumentProcessorTest {
     }
 
     private DocumentProcessor processorWith(TaskExecutor executor, Duration timeLimit) {
-        return new DocumentProcessor(repository, storage, extractor, embedder, executor, properties(timeLimit));
+        return new DocumentProcessor(
+                repository, storage, extractor, embedder, executor, properties(timeLimit), observations);
     }
 
     private static IngestionProperties properties(Duration timeLimit) {

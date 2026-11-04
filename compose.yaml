@@ -1,5 +1,9 @@
 name: docchat
 
+# Prometheus and Grafana, which only start with: docker compose --profile observability up -d
+include:
+  - observability/compose.yaml
+
 services:
   db:
     # Keep in sync with POSTGRES_IMAGE in the backend's TestcontainersConfiguration.

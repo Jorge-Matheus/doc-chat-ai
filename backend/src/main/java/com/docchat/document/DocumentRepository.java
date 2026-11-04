@@ -5,7 +5,9 @@ import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.sql.Types;
 import java.time.OffsetDateTime;
+import java.util.EnumMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.jdbc.core.BatchPreparedStatementSetter;
@@ -86,6 +88,17 @@ public class DocumentRepository {
                 .param("ownerId", ownerId)
                 .query(Long.class)
                 .single();
+    }
+
+    /** Across all users, for the metrics. It says how many, and nothing about whose. */
+    Map<DocumentStatus, Long> countByStatus() {
+        return jdbcClient.sql("SELECT status, count(*) AS total FROM documents GROUP BY status").query(row -> {
+            Map<DocumentStatus, Long> counts = new EnumMap<>(DocumentStatus.class);
+            while (row.next()) {
+                counts.put(DocumentStatus.valueOf(row.getString("status")), row.getLong("total"));
+            }
+            return counts;
+        });
     }
 
     long totalSizeOwnedBy(UUID ownerId) {

@@ -158,13 +158,14 @@ class SecurityRulesIT {
     }
 
     @Test
-    void onlyTheHealthAndInfoEndpointsOfActuatorAreExposed() {
+    void onlyTheHealthInfoAndPrometheusEndpointsOfActuatorAreExposed() {
         for (String endpoint : List.of(
                 "env", "beans", "heapdump", "threaddump", "loggers", "metrics", "mappings", "configprops", "sessions",
                 "scheduledtasks", "conditions", "shutdown")) {
             assertThat(alice.get("/actuator/" + endpoint).statusCode()).as(endpoint).isEqualTo(404);
         }
         assertThat(new ApiClient(port).get("/actuator/env").statusCode()).isEqualTo(401);
+        assertThat(new ApiClient(port).get("/actuator/prometheus").statusCode()).isEqualTo(200);
     }
 
     @Test

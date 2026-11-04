@@ -1,14 +1,33 @@
 # DocChat AI
 
-DocChat AI is a full-stack platform, under construction, for asking questions about PDF documents in natural language and getting answers backed by verifiable citations to the source pages. It is built with Java, Spring Boot, RAG (Retrieval-Augmented Generation), PostgreSQL with pgvector, Angular and local AI models.
+DocChat AI is a full-stack platform for asking questions about PDF documents in natural language and getting answers backed by verifiable citations to the source pages. It is built with Java, Spring Boot, RAG (Retrieval-Augmented Generation), PostgreSQL with pgvector, Angular and local AI models.
 
 It runs only on your own machine. Your documents never leave it: there is no cloud service and no deployment, and it uses only free software.
-
-> **Current state:** accounts, PDF upload, conversations with cited answers and a viewer for the source pages work, with automated browser and security tests and recovery from failures (Phases 1 to 5). Observability and load tests are not implemented yet. See [Project status](#project-status).
 
 ## The problem
 
 Finding a specific answer in a long document, such as a 40-page contract, means reading it or searching for exact words. Generic AI chat can answer faster, but its answers are hard to trust without knowing where they came from. DocChat AI answers only from the user's own documents, cites the pages it used, and says so when the documents do not contain the answer.
+
+## What it does
+
+- **Answers with sources.** Each answer cites the file and page of what it used, and the server checks every citation, so an answer without a real source is not shown.
+- **Says when it does not know.** If the documents do not contain the answer, it says so, instead of using the model's general knowledge.
+- **Conversations.** Follow-ups such as "and the penalty?" are understood through the conversation, which stays in your history. The interface shows what was searched for.
+- **Sources you can check.** A citation opens the text of its page with the passage marked, and from there the original PDF.
+- **Questions in one language about documents in another.**
+- **Your own accounts and documents.** Each user reaches only their own data, and it is all stored on this computer.
+- **Recovers from failures.** Documents continue after a restart or a database outage, and one that failed because the AI service was down can be tried again.
+- **Measures itself.** Optional dashboards show the time of each stage, errors and resources.
+
+| Asking a question | Following up |
+|---|---|
+| ![An answer citing the page of a contract](frontend/public/showcase/ask.webp) | ![A follow-up question and what was searched for](frontend/public/showcase/follow-up.webp) |
+
+| Checking a source | Your documents |
+|---|---|
+| ![The text of a page with the cited passage marked](frontend/public/showcase/source.webp) | ![The list of documents with their state](frontend/public/showcase/documents.webp) |
+
+These are captures of the real application, using sample documents and real answers from the local models.
 
 ## Project status
 
@@ -19,9 +38,11 @@ Finding a specific answer in a long document, such as a 40-page contract, means 
 | 3. RAG | Chunking, embeddings, vector search, LLM answers with citations | Complete |
 | 4. Conversations and interface | History, source viewer, complete UI flow | Complete |
 | 5. Tests and robustness | End-to-end and security tests, failure recovery | Complete |
-| 6. Performance and documentation | Observability, load tests, final documentation | Planned |
+| 6. Performance and documentation | Observability, load tests, final documentation | Complete |
 
-**How Phases 1 to 5 were checked:** the automated tests listed under [Tests](#tests), which include the complete flow in a real browser, stopping the database, the backend and the AI service, and restarting the backend during processing. They run in headless Microsoft Edge on the developer's machine, and nothing runs them automatically on a server. Separate commands run the same browser against the real models. A PDF of 500 pages with the real models, opening the original PDF at the cited page, and upgrading a database that already had documents were each checked once by hand and are not repeated automatically. The quality of answers was measured on a few short documents written for the tests, not on real ones.
+Automated deployment and hosted continuous integration are left out by decision, because the project runs only on its owner's machine. See the [Roadmap](#roadmap).
+
+**How it was checked:** the automated tests listed under [Tests](#tests), which include the complete flow in a real browser, stopping the database, the backend and the AI service, and restarting the backend during processing. They run in headless Microsoft Edge on the developer's machine, and nothing runs them automatically on a server. Separate commands run the same browser against the real models. A PDF of 500 pages with the real models, opening the original PDF at the cited page, and upgrading a database that already had documents were each checked once by hand and are not repeated automatically. The quality of answers was measured on a few short documents written for the tests, not on real ones.
 
 ## Architecture
 
@@ -50,11 +71,46 @@ Backend packages today:
 | `com.docchat.rag` | Passage search, rewriting of follow-up questions, the prompts, and answers with verified citations |
 | `com.docchat.chat` | Conversations: storing questions, answers and citations, and their ownership |
 
-**Processing a document.** An upload is answered right after the file is stored, and the document starts as `PROCESSING`. A small pool of workers extracts the text of each page, splits it into overlapping passages that never cross a page, embeds them and saves everything in one transaction. The document then becomes `READY`, or `FAILED` with a reason. The interface checks every two seconds while a document is processing.
+### Processing a document
 
-A document does not stay in `PROCESSING` forever. One that takes longer than the time limit fails with that reason. A shutdown or a database outage says nothing about the document, so it stays as it was, and a check at startup and every minute finds the documents no worker has and processes them again. A document that failed for a reason unrelated to its file, such as the AI service being down, can be tried again from the list without uploading it again.
+```mermaid
+flowchart TD
+    Upload["POST /api/documents<br/>checks signature, size and storage limit"] --> Store["Store the file<br/>insert a row as PROCESSING"]
+    Store --> Accepted["Answer 202<br/>the interface checks every 2 seconds"]
+    Store --> Queue["Bounded queue, 2 workers"]
+    Resume["Check at startup and every minute<br/>for documents no worker has"] --> Queue
+    Queue --> Extract["Extract the text of each page"]
+    Extract --> Split["Split into passages<br/>that never cross a page"]
+    Split --> Embed["Embed the passages<br/>bge-m3"]
+    Embed --> Save["Save in one transaction"]
+    Save --> Ready["READY"]
+    Extract -->|"damaged, protected, no text, too many pages"| Failed["FAILED, with a reason"]
+    Embed -->|"AI service down"| Retryable["FAILED, can be tried again"]
+    Queue -->|"past the time limit or queue full"| Retryable
+    Retryable -->|"Try again"| Queue
+    Save -->|"database down, or shutting down"| Resume
+```
 
-**Answering a question.**
+An upload is answered right after the file is stored. A document does not stay in `PROCESSING` forever: one that takes longer than the time limit fails with that reason. A shutdown or a database outage says nothing about the document, so it stays as it was and is processed again. See [ADR 0010](docs/adr/0010-background-document-processing.md).
+
+### Answering a question
+
+```mermaid
+flowchart TD
+    Question["Question"] --> History{"Earlier turns?"}
+    History -->|"yes"| Rewrite["The language model rewrites it<br/>so that it stands alone"]
+    History -->|"no"| EmbedQ["Embed the question"]
+    Rewrite --> EmbedQ
+    EmbedQ --> Search["Closest passages among<br/>the user's own READY documents"]
+    Search --> Enough{"Any similar enough?"}
+    Enough -->|"no"| NotFound["Not found<br/>the model is not asked"]
+    Enough -->|"yes"| Generate["The language model answers<br/>from numbered passages only"]
+    Generate --> Check{"Cites a passage it was given?"}
+    Check -->|"no"| NotFound
+    Check -->|"yes"| Resolve["Each number becomes<br/>the real file and page"]
+    Resolve --> Save["Store the question and its answer"]
+    NotFound --> Save
+```
 
 1. In a conversation with earlier turns, the language model first rewrites the question so that it stands alone, and "and the penalty?" becomes "what is the penalty of the contract?". The interface shows this as "Searched for".
 2. The question is embedded, and the closest passages among the user's own `READY` documents are found. Those too different from the question are dropped. If none remains, the answer is "not found" and the language model is not asked to answer.
@@ -63,6 +119,68 @@ A document does not stay in `PROCESSING` forever. One that takes longer than the
 5. The question and its answer are stored together. If the model failed, nothing is stored and the question goes back to the input.
 
 **Checking a source.** Each citation opens the text of its page, with the cited passage marked, and from there the original PDF at that page. See [ADR 0008](docs/adr/0008-conversations-and-follow-up-questions.md).
+
+### Data model
+
+```mermaid
+erDiagram
+    users ||--o{ documents : owns
+    users ||--o{ conversations : owns
+    documents ||--o{ document_pages : has
+    document_pages ||--o{ document_chunks : "split into"
+    conversations ||--o{ conversation_turns : has
+    conversation_turns ||--o{ turn_citations : cites
+    document_chunks |o--o{ turn_citations : "points at"
+
+    users {
+        uuid id PK
+        varchar email UK
+        varchar password_hash
+    }
+    documents {
+        uuid id PK
+        uuid owner_id FK
+        varchar filename
+        bigint size_bytes
+        varchar status
+        varchar failure_reason
+        integer page_count
+    }
+    document_pages {
+        uuid document_id PK
+        integer page_number PK
+        text content
+    }
+    document_chunks {
+        uuid document_id PK
+        integer page_number PK
+        integer chunk_index PK
+        text content
+        vector_1024 embedding
+    }
+    conversations {
+        uuid id PK
+        uuid owner_id FK
+        text title
+    }
+    conversation_turns {
+        bigint id PK
+        uuid conversation_id FK
+        text question
+        text interpreted_question
+        text answer
+    }
+    turn_citations {
+        bigint turn_id PK
+        integer number PK
+        text filename
+        uuid document_id FK
+        integer page_number
+        integer chunk_index
+    }
+```
+
+Deleting a document removes its pages and passages. Its citations stay with `document_id` empty, so the answer can say that its source was deleted. Spring Session's own tables hold the sessions, and the PDF files are on the disk, named after the document id.
 
 ## Tech stack
 
@@ -81,6 +199,9 @@ A document does not stay in `PROCESSING` forever. One that takes longer than the
 | Angular | 22.2 | Standalone components, signals and strict TypeScript. |
 | Angular Material | 22.2 | Accessible forms, dialogs and pagination. See [ADR 0006](docs/adr/0006-angular-material.md). |
 | JUnit, Mockito, Testcontainers, Vitest | Managed by Spring Boot and Angular | Automated tests with no paid APIs, models or GPU. |
+| Playwright | 1.64 | Tests in a real browser, using the Edge that comes with Windows. See [ADR 0009](docs/adr/0009-browser-tests-on-an-isolated-stack.md). |
+| Micrometer, Prometheus, Grafana | Managed by Spring Boot, 3.15, 13.0 | Metrics of each stage, with optional dashboards. See [ADR 0011](docs/adr/0011-observability-and-load-tests.md). |
+| k6 | 2.3 | Load tests in a container, so nothing has to be installed. |
 
 ## Getting started
 
@@ -145,6 +266,7 @@ Ollama unloads a model after five idle minutes, which frees its GPU memory and m
 | `POSTGRES_USER` | Compose, `dev` profile | Database user |
 | `POSTGRES_PASSWORD` | Compose, `dev` profile | Database password, with no default on purpose |
 | `POSTGRES_PORT`, `BACKEND_PORT`, `FRONTEND_PORT`, `OLLAMA_PORT` | Compose, `dev` profile | Host ports, bound to 127.0.0.1 |
+| `PROMETHEUS_PORT`, `GRAFANA_PORT` | Compose, with the `observability` profile | Host ports, bound to 127.0.0.1. The defaults are 9090 and 3000. |
 | `DOCCHAT_DB_URL`, `DOCCHAT_DB_USERNAME`, `DOCCHAT_DB_PASSWORD` | `prod` profile | Database connection. Compose sets these for the container. |
 | `DOCCHAT_STORAGE_DIR` | Backend | Directory for uploaded files. Compose sets it to a named volume. The default is `storage`, relative to the working directory. |
 | `OLLAMA_CHAT_MODEL` | Compose, backend | Language model. The default is `qwen3.5:9b`. |
@@ -176,15 +298,34 @@ The API is documented with OpenAPI at `/v3/api-docs`, and Swagger UI is at `/swa
 | `GET /api/system/status` | Real state of each dependency, including the AI models. Answers 200 while the backend runs. Public. |
 | `GET /actuator/health/readiness` | Readiness probe. Answers 503 if the database, pgvector or the file storage is unavailable. The AI service is left out on purpose, because accounts and documents work without it. Public. |
 | `GET /actuator/health/liveness` | Liveness probe. Public. |
+| `GET /actuator/prometheus` | Metrics for Prometheus, on the backend's port only. It holds no user data. Public. |
 
 Requests that change data must send the value of the `XSRF-TOKEN` cookie in the `X-XSRF-TOKEN` header. Any response from the backend sets that cookie.
 
-```bash
-curl http://localhost:8080/api/system/status
-```
+A complete session with `curl`, in Bash. The `csrf` function reads the token from the file where `curl` keeps the cookies:
 
-```json
-{ "status": "UP", "database": "UP", "vectorExtension": "UP", "ai": "UP" }
+```bash
+API=http://localhost:8080
+JAR=$(mktemp)
+csrf() { awk '$6 == "XSRF-TOKEN" { print $7 }' "$JAR"; }
+
+# The state of the system, which also gives the first token.
+curl -s -c "$JAR" $API/api/system/status
+# {"status":"UP","database":"UP","vectorExtension":"UP","ai":"UP"}
+
+# Create an account and sign in.
+curl -s -b "$JAR" -c "$JAR" -H "X-XSRF-TOKEN: $(csrf)" -H 'Content-Type: application/json' \
+  -d '{"email":"me@example.com","password":"a long enough password"}' $API/api/auth/register
+curl -s -b "$JAR" -c "$JAR" -H "X-XSRF-TOKEN: $(csrf)" \
+  --data-urlencode 'email=me@example.com' --data-urlencode 'password=a long enough password' $API/api/auth/login
+
+# Upload a PDF, and check it until its status is READY.
+curl -s -b "$JAR" -c "$JAR" -H "X-XSRF-TOKEN: $(csrf)" -F 'file=@contract.pdf;type=application/pdf' $API/api/documents
+curl -s -b "$JAR" $API/api/documents
+
+# Ask a question.
+curl -s -b "$JAR" -c "$JAR" -H "X-XSRF-TOKEN: $(csrf)" -H 'Content-Type: application/json' \
+  -d '{"question":"How much notice is required to terminate the contract?"}' $API/api/conversations
 ```
 
 A turn looks like this. When the documents do not contain the answer, `answered` is `false`, `text` is `null` and `citations` is empty. `interpretedQuestion` is what was searched for, and it is `null` when that is the question as it was asked. Once a document is deleted, `documentId` and `excerpt` are `null` in its citations.
@@ -235,10 +376,52 @@ A `FAILED` document has one of these reasons:
 | `npm run build` (in `frontend`) | Production build | No |
 | `npm test` (in `e2e`, after `npm ci`) | The whole application in a real browser: the complete flow, unauthorized access, unusable files, hostile content, and the AI service, the backend and the database stopping and returning. Takes a few minutes. | Yes |
 | `npm run test:real` (in `e2e`) | The quality of real answers: the right page, across languages, nothing invented, instructions in a PDF not obeyed. Run it after changing a prompt, a model or the search. | Yes, with a GPU and the `ollama` service of the main stack running |
+| `npm run load` (in `e2e`) | The load test described under [Performance](#performance), with a fake model. Fails if a threshold is not met. | Yes |
+| `npm run load:real`, `npm run load:scale` (in `e2e`) | The time of real answers, one at a time, and of searching a full account. | Yes. The first also needs a GPU and the `ollama` service of the main stack running |
 
-No test calls a paid API, and only `npm run test:real` needs a GPU. Test PDFs are generated by the tests themselves. Everything except that command uses predictable fake models, so it proves the plumbing and not how good the real models' answers are.
+No test calls a paid API, and only `npm run test:real` and `npm run load:real` need a GPU. Test PDFs are generated by the tests themselves. Everything except that command uses predictable fake models, so it proves the plumbing and not how good the real models' answers are.
 
 The browser tests use Microsoft Edge, which comes with Windows, and run on their own stack with its own database and files, defined in `e2e/compose.yaml`. It can run next to the main stack, and nothing in it touches your documents. See [ADR 0009](docs/adr/0009-browser-tests-on-an-isolated-stack.md). On another system, or to use another browser, change `channel` in `e2e/playwright.config.ts`. To look at the stack after a failure, set `E2E_KEEP_STACK=1` before running them.
+
+## Observability
+
+**Logs.** With the `prod` profile, which Compose uses, logs are JSON. Each line has the request's `correlationId`, also sent to the client as `X-Correlation-Id`, and the `documentId` during processing. They hold no passwords, document text, questions or answers, which a test checks.
+
+**Metrics.** The backend measures its own work, and Prometheus reads it from `/actuator/prometheus`:
+
+| Metric | What it measures | Tags |
+|---|---|---|
+| `docchat_question_seconds` | The whole answer to a question | `outcome`: `answered`, `not_found`, `refused`, `timed_out`, `failed` |
+| `docchat_question_stage_seconds` | Each step of an answer | `stage`: `rewrite`, `embedding`, `search`, `generation`, and `error` |
+| `docchat_document_processing_seconds` | Processing a document | `outcome`: `ready`, `interrupted`, or the failure reason in lower case |
+| `docchat_document_stage_seconds` | Each step of a document | `stage`: `extraction`, `embedding`, `saving`, and `error` |
+| `docchat_documents` | Documents in each state, across all users | `status` |
+| `gen_ai_client_token_usage_total` | Tokens of the language model. They cost nothing, because it runs on this computer. | `gen_ai_token_type` |
+| `http_server_requests_seconds`, `jvm_*`, `hikaricp_*`, `executor_*` | Requests, memory, database connections and queues, from Spring Boot | |
+
+**Dashboards.** Prometheus and Grafana are optional, because together they use over 200 MB of memory. To start them with everything else:
+
+```bash
+docker compose --profile observability up -d
+```
+
+Then open Grafana at <http://localhost:3000>, with no login, which shows the dashboard below. Prometheus is at <http://localhost:9090>. Both are bound to 127.0.0.1, and Grafana's analytics and update checks are off. To stop them and keep their data, run `docker compose --profile observability stop prometheus grafana`. To remove everything, add the same `--profile observability` to `docker compose down`.
+
+![The Grafana dashboard during a load test](docs/images/grafana-dashboard.webp)
+
+This capture is from a load test with the fake model.
+
+## Performance
+
+Measured on an AMD Ryzen 5 1600 with an RTX 3060 and 16 GB of RAM. The method, the environment and the details are in [docs/performance.md](docs/performance.md).
+
+| Scenario | Result |
+|---|---|
+| Real models, one question at a time, on a short document | p50 757 ms, p95 876 ms. The first question waited 48 s for the model to load. |
+| Fake model, 20 people browsing, 2 questions per second and a document every 10 seconds | 22 requests per second with no failures. p95 of 22 ms for reading and 42 ms for a question. |
+| Searching one account with 10,000 passages, then with 50,000 | p50 of 85 ms, then 592 ms |
+
+The load test uses a fake model because a real one answers one question at a time on one GPU, so it would only measure the GPU.
 
 ## Security
 
@@ -257,7 +440,7 @@ This version is meant to run on your own machine and **must not be exposed publi
 - Questions and answers are stored in the database with the conversation. They and document contents are not written to the logs.
 - Deleting a document removes its passages from citations, because citations point at passages instead of copying them. The text of answers stays until their conversation is deleted, and the confirmation says so.
 - Compose binds every published port to 127.0.0.1.
-- Only the `health` and `info` Actuator endpoints are exposed, and health responses omit component details.
+- Only the `health`, `info` and `prometheus` Actuator endpoints are exposed, and health responses omit component details. The metrics have no email, file name, document text, question or answer, which a test checks. The frontend does not forward `/actuator`.
 - Error responses never include stack traces or internal messages.
 - Secrets come from the environment, and `.env` is ignored by Git.
 - The backend and frontend containers run as non-root users.
@@ -296,9 +479,23 @@ This version is meant to run on your own machine and **must not be exposed publi
 - Login has no rate limit.
 - A file that keeps the PDF library busy fails at the time limit and frees its worker, but Java cannot stop that thread, so it uses a processor core until the application restarts.
 - A file left on the disk by a crash between storing it and recording it, or that could not be deleted, stays there. No one can reach it, but it takes up space.
+- Searching compares a question with all the passages of an account, so it gets slower as documents accumulate. It took about 0.6 s with 50,000 passages. See [docs/performance.md](docs/performance.md).
 - Browser tests only run in Microsoft Edge.
 - Swagger UI's "Try it out" does not send the CSRF token, so only read requests work there.
 - Mockito prints a self-attach warning during backend tests, and PDFBox logs a fallback font warning for PDFs using standard fonts. Neither affects results.
+
+## Roadmap
+
+None of this exists yet, and it is listed in no particular order.
+
+- Recognising text in scanned PDFs (OCR).
+- Answers appearing word by word as the model writes them.
+- Renaming and searching conversations.
+- Reading tables and layout, which plain text extraction loses.
+- Password reset, email verification and account deletion.
+- A limit on login attempts.
+- An approximate vector index, if accounts grow beyond what the [measurements](docs/performance.md) cover.
+- Hosted continuous integration and automated deployment, which are left out on purpose for now, because the project runs only on its owner's machine.
 
 ## Architecture decisions
 
@@ -311,3 +508,5 @@ This version is meant to run on your own machine and **must not be exposed publi
 - [ADR 0007: Local AI with Ollama](docs/adr/0007-local-ai-with-ollama.md)
 - [ADR 0008: Conversations and follow-up questions](docs/adr/0008-conversations-and-follow-up-questions.md)
 - [ADR 0009: Browser tests on an isolated stack](docs/adr/0009-browser-tests-on-an-isolated-stack.md)
+- [ADR 0010: Background document processing inside the application](docs/adr/0010-background-document-processing.md)
+- [ADR 0011: Observability and load tests](docs/adr/0011-observability-and-load-tests.md)

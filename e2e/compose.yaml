@@ -3,6 +3,10 @@
 # without touching real data. The ports differ too, so both can run at the same time.
 name: docchat-e2e
 
+# Started only by the load test, for the percentiles of each stage and a dashboard with real data.
+include:
+  - ../observability/compose.yaml
+
 services:
   db:
     # Keep in sync with compose.yaml in the repository root.
@@ -48,7 +52,7 @@ services:
       OLLAMA_BASE_URL: ${E2E_OLLAMA_URL:-http://fake-ollama:11434}
       # Low limits, so tests of what happens at a limit do not have to wait long to reach it.
       DOCCHAT_RAG_QUESTION_TIME_LIMIT: ${E2E_QUESTION_TIME_LIMIT:-8s}
-      DOCCHAT_RAG_MAX_CONCURRENT_QUESTIONS: 1
+      DOCCHAT_RAG_MAX_CONCURRENT_QUESTIONS: ${E2E_MAX_QUESTIONS:-1}
       DOCCHAT_INGESTION_MAX_PROCESSING_TIME: ${E2E_PROCESSING_TIME_LIMIT:-12s}
       DOCCHAT_INGESTION_RESUME_INTERVAL: PT3S
       JAVA_TOOL_OPTIONS: -Xmx768m
@@ -77,6 +81,19 @@ services:
     depends_on:
       backend:
         condition: service_healthy
+
+  # Run by npm run load.
+  k6:
+    image: grafana/k6:2.3.0
+    profiles: [load]
+    environment:
+      BASE_URL: http://frontend:8080
+      MODE: ${E2E_LOAD_MODE:-simulated}
+      DURATION: ${E2E_LOAD_DURATION:-3m}
+      SCALE_DOCUMENTS: ${E2E_SCALE_DOCUMENTS:-5}
+    volumes:
+      - ./load:/load
+    command: ["run", "--quiet", "/load/load.js"]
 
 volumes:
   db-data:

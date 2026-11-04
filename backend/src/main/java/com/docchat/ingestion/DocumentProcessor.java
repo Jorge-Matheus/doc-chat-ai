@@ -9,10 +9,13 @@ import com.docchat.document.DocumentRepository;
 import com.docchat.document.DocumentUploadedEvent;
 import com.docchat.document.EmbeddedChunk;
 import com.docchat.storage.FileStorage;
+import io.micrometer.observation.Observation;
+import io.micrometer.observation.ObservationRegistry;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -20,8 +23,10 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.ContextClosedEvent;
@@ -45,6 +50,8 @@ import org.springframework.transaction.TransactionException;
 class DocumentProcessor {
 
     private static final Logger log = LoggerFactory.getLogger(DocumentProcessor.class);
+    private static final String OUTCOME_READY = "ready";
+    private static final String OUTCOME_INTERRUPTED = "interrupted";
 
     private final DocumentRepository documentRepository;
     private final FileStorage fileStorage;
@@ -52,6 +59,7 @@ class DocumentProcessor {
     private final TextEmbedder embedder;
     private final TaskExecutor executor;
     private final IngestionProperties properties;
+    private final ObservationRegistry observations;
 
     /** Documents waiting for a worker or being processed, which must not be queued a second time. */
     private final Set<UUID> inProgress = ConcurrentHashMap.newKeySet();
@@ -64,13 +72,15 @@ class DocumentProcessor {
             PdfTextExtractor extractor,
             TextEmbedder embedder,
             @Qualifier("documentProcessingExecutor") TaskExecutor executor,
-            IngestionProperties properties) {
+            IngestionProperties properties,
+            ObservationRegistry observations) {
         this.documentRepository = documentRepository;
         this.fileStorage = fileStorage;
         this.extractor = extractor;
         this.embedder = embedder;
         this.executor = executor;
         this.properties = properties;
+        this.observations = observations;
     }
 
     @EventListener
@@ -122,7 +132,7 @@ class DocumentProcessor {
     }
 
     void process(UUID documentId) {
-        try {
+        try (MDC.MDCCloseable inLogs = MDC.putCloseable("documentId", documentId.toString())) {
             // It may have been deleted while it waited in the queue.
             if (documentRepository.isProcessing(documentId)) {
                 processWithinTimeLimit(documentId);
@@ -143,20 +153,23 @@ class DocumentProcessor {
      * saving its result does nothing because the document has already failed.
      */
     private void processWithinTimeLimit(UUID documentId) {
-        FutureTask<Void> job = new FutureTask<>(() -> {
-            extractAndStore(documentId);
-            return null;
-        });
+        // Interrupted, unless it ends in one of the ways below. Tags hold only fixed words, so no file
+        // name or text can reach the metrics.
+        Observation processing = Observation.createNotStarted("docchat.document.processing", observations)
+                .lowCardinalityKeyValue("outcome", OUTCOME_INTERRUPTED)
+                .start();
+        FutureTask<String> job = new FutureTask<>(() -> extractAndStore(documentId));
         Thread.ofPlatform()
                 .daemon()
                 .name("document-job-" + documentId)
                 .start(new KeepLoggingContext().decorate(job));
         try {
-            job.get(properties.maxProcessingTime().toMillis(), TimeUnit.MILLISECONDS);
+            String outcome = job.get(properties.maxProcessingTime().toMillis(), TimeUnit.MILLISECONDS);
+            processing.lowCardinalityKeyValue("outcome", outcome);
         } catch (TimeoutException ex) {
             log.warn("Document {} passed the time limit of {}", documentId, properties.maxProcessingTime());
             // Recorded first, so the failure the interruption causes in the job cannot replace this reason.
-            fail(documentId, DocumentFailureReason.PROCESSING_TIMED_OUT);
+            processing.lowCardinalityKeyValue("outcome", fail(documentId, DocumentFailureReason.PROCESSING_TIMED_OUT));
             job.cancel(true);
         } catch (InterruptedException ex) {
             // The application is stopping, and the document is processed again at the next startup.
@@ -164,46 +177,64 @@ class DocumentProcessor {
             Thread.currentThread().interrupt();
         } catch (ExecutionException ex) {
             log.error("Could not process document {}", documentId, ex);
-            fail(documentId, DocumentFailureReason.INTERNAL_ERROR);
+            processing.lowCardinalityKeyValue("outcome", fail(documentId, DocumentFailureReason.INTERNAL_ERROR));
+        } finally {
+            processing.stop();
         }
     }
 
-    private void extractAndStore(UUID documentId) {
+    /** @return how it ended, for the metrics */
+    private String extractAndStore(UUID documentId) {
         try (InputStream pdf = fileStorage.open(Document.storageKey(documentId))) {
-            List<String> pages = extractor.extractPages(pdf);
-            documentRepository.completeProcessing(documentId, pages, embedChunks(pages));
-            log.info("Document {} processed", documentId);
+            List<String> pages = stage("extraction", () -> extractor.extractPages(pdf));
+            List<EmbeddedChunk> chunks = stage("embedding", () -> embedChunks(pages));
+            stage("saving", () -> {
+                documentRepository.completeProcessing(documentId, pages, chunks);
+                return null;
+            });
+            log.info("Document {} processed: {} pages, {} passages", documentId, pages.size(), chunks.size());
+            return OUTCOME_READY;
         } catch (PdfExtractionException ex) {
             log.info("Document {} rejected: {}", documentId, ex.reason());
-            fail(documentId, ex.reason());
+            return fail(documentId, ex.reason());
         } catch (AiUnavailableException ex) {
             log.warn("Could not embed document {}: {}", documentId, ex.getCause().toString());
-            fail(documentId, DocumentFailureReason.EMBEDDING_UNAVAILABLE);
+            return fail(documentId, DocumentFailureReason.EMBEDDING_UNAVAILABLE);
         } catch (DataAccessResourceFailureException | TransactionException ex) {
             // Saving runs in a transaction, and without a connection that fails with its own exceptions.
             log.warn(
                     "Database unavailable for document {}, trying again later: {}",
                     documentId,
                     ex.getClass().getSimpleName());
+            return OUTCOME_INTERRUPTED;
         } catch (IOException | RuntimeException | OutOfMemoryError ex) {
             log.error("Could not process document {}", documentId, ex);
-            fail(documentId, DocumentFailureReason.INTERNAL_ERROR);
+            return fail(documentId, DocumentFailureReason.INTERNAL_ERROR);
         }
     }
 
-    private void fail(UUID documentId, DocumentFailureReason reason) {
+    /** @return how it ended, for the metrics */
+    private String fail(UUID documentId, DocumentFailureReason reason) {
         if (stopping) {
             log.info("Document {} was interrupted by the shutdown and will be processed again", documentId);
-            return;
+            return OUTCOME_INTERRUPTED;
         }
         try {
             documentRepository.failProcessing(documentId, reason);
+            return reason.name().toLowerCase(Locale.ROOT);
         } catch (DataAccessException ex) {
             log.warn(
                     "Could not record the failure of document {}, trying again later: {}",
                     documentId,
                     ex.getClass().getSimpleName());
+            return OUTCOME_INTERRUPTED;
         }
+    }
+
+    private <T> T stage(String name, Supplier<T> work) {
+        return Observation.createNotStarted("docchat.document.stage", observations)
+                .lowCardinalityKeyValue("stage", name)
+                .observe(work);
     }
 
     private List<EmbeddedChunk> embedChunks(List<String> pages) {

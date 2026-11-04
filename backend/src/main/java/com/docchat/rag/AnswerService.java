@@ -4,6 +4,8 @@ import com.docchat.ai.AiUnavailableException;
 import com.docchat.ai.TextEmbedder;
 import com.docchat.ai.TextGenerator;
 import com.docchat.common.web.ApiException;
+import io.micrometer.observation.Observation;
+import io.micrometer.observation.ObservationRegistry;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -12,6 +14,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.function.Supplier;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.core.task.AsyncTaskExecutor;
 import org.springframework.core.task.TaskRejectedException;
@@ -31,6 +34,7 @@ public class AnswerService {
     private final ChunkSearchRepository chunkSearch;
     private final RagProperties properties;
     private final AsyncTaskExecutor executor;
+    private final ObservationRegistry observations;
 
     AnswerService(
             TextEmbedder embedder,
@@ -38,13 +42,15 @@ public class AnswerService {
             QuestionRewriter rewriter,
             ChunkSearchRepository chunkSearch,
             RagProperties properties,
-            @Qualifier("questionExecutor") AsyncTaskExecutor executor) {
+            @Qualifier("questionExecutor") AsyncTaskExecutor executor,
+            ObservationRegistry observations) {
         this.embedder = embedder;
         this.generator = generator;
         this.rewriter = rewriter;
         this.chunkSearch = chunkSearch;
         this.properties = properties;
         this.executor = executor;
+        this.observations = observations;
     }
 
     /** @param answer null when the documents did not contain the answer */
@@ -71,10 +77,27 @@ public class AnswerService {
      * @param history the most recent turns of the conversation, oldest first
      */
     public Answer answer(UUID ownerId, String question, List<UUID> documentIds, List<PreviousTurn> history) {
-        Future<Answer> work = start(() -> findAnswer(ownerId, question, documentIds, history));
+        // Tags hold only fixed words, so no question or document can reach the metrics.
+        Observation observation = Observation.createNotStarted("docchat.question", observations)
+                .lowCardinalityKeyValue("outcome", "failed");
+        return observation.observe(() -> {
+            Answer answer = answerWithinLimits(observation, ownerId, question, documentIds, history);
+            observation.lowCardinalityKeyValue("outcome", answer.text() == null ? "not_found" : "answered");
+            return answer;
+        });
+    }
+
+    private Answer answerWithinLimits(
+            Observation observation,
+            UUID ownerId,
+            String question,
+            List<UUID> documentIds,
+            List<PreviousTurn> history) {
+        Future<Answer> work = start(observation, () -> findAnswer(ownerId, question, documentIds, history));
         try {
             return work.get(properties.questionTimeLimit().toMillis(), TimeUnit.MILLISECONDS);
         } catch (TimeoutException ex) {
+            observation.lowCardinalityKeyValue("outcome", "timed_out");
             work.cancel(true);
             throw new AiUnavailableException(ex);
         } catch (InterruptedException ex) {
@@ -89,10 +112,11 @@ public class AnswerService {
         }
     }
 
-    private Future<Answer> start(Callable<Answer> findingTheAnswer) {
+    private Future<Answer> start(Observation observation, Callable<Answer> findingTheAnswer) {
         try {
             return executor.submit(findingTheAnswer);
         } catch (TaskRejectedException ex) {
+            observation.lowCardinalityKeyValue("outcome", "refused");
             throw new ApiException(
                     HttpStatus.TOO_MANY_REQUESTS,
                     "TOO_MANY_QUESTIONS",
@@ -101,12 +125,14 @@ public class AnswerService {
     }
 
     private Answer findAnswer(UUID ownerId, String question, List<UUID> documentIds, List<PreviousTurn> history) {
-        String standalone = rewriter.rewrite(question, history);
+        // A first question needs no rewriting, and timing it would hide how long rewriting really takes.
+        String standalone = history.isEmpty() ? question : stage("rewrite", () -> rewriter.rewrite(question, history));
         String interpreted = standalone.equals(question) ? null : standalone;
 
-        float[] questionEmbedding = embedder.embed(standalone);
+        float[] questionEmbedding = stage("embedding", () -> embedder.embed(standalone));
         List<RetrievedChunk> chunks =
-                chunkSearch.findClosest(ownerId, documentIds, questionEmbedding, properties.topK()).stream()
+                stage("search", () -> chunkSearch.findClosest(ownerId, documentIds, questionEmbedding, properties.topK()))
+                        .stream()
                         .filter(chunk -> chunk.similarity() >= properties.minSimilarity())
                         .toList();
         // Without relevant passages there is nothing to ground an answer on, so the model is not asked.
@@ -114,7 +140,8 @@ public class AnswerService {
             return Answer.notFound(interpreted);
         }
 
-        String reply = generator.generate(AnswerPrompt.SYSTEM, AnswerPrompt.userMessage(standalone, chunks));
+        String reply = stage(
+                "generation", () -> generator.generate(AnswerPrompt.SYSTEM, AnswerPrompt.userMessage(standalone, chunks)));
         AnswerParser.ParsedAnswer parsed = AnswerParser.parse(reply, chunks.size());
         if (parsed.isNotFound()) {
             return Answer.notFound(interpreted);
@@ -131,5 +158,11 @@ public class AnswerService {
                     chunk.chunkIndex()));
         }
         return new Answer(interpreted, parsed.text(), citations);
+    }
+
+    private <T> T stage(String name, Supplier<T> work) {
+        return Observation.createNotStarted("docchat.question.stage", observations)
+                .lowCardinalityKeyValue("stage", name)
+                .observe(work);
     }
 }

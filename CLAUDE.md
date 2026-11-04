@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-DocChat AI answers questions about a user's PDF documents with citations to the source pages, using RAG. It is built in phases, and only part of it exists: the "Project status" table in [README.md](README.md) is the source of truth for what is implemented and how it was verified. The README also has the API, environment variable and troubleshooting tables.
+DocChat AI answers questions about a user's PDF documents with citations to the source pages, using RAG. It was built in phases: the "Project status" table in [README.md](README.md) is the source of truth for what is implemented and how it was verified, and "Roadmap" lists what is not. The README also has the API, environment variable, metrics and troubleshooting tables.
 
 ## Commands
 
@@ -40,6 +40,9 @@ npm test -- tests/journey.spec.ts            # One file
 npm test -- -g 'clicking twice'              # By test name
 npm run test:real                            # Real models, through the main stack's ollama service
 npm run typecheck
+npm run load                                 # Load test with k6 and a fake model, about 5 minutes
+npm run load:real                            # The time of real answers, one at a time
+E2E_SCALE_DOCUMENTS=25 npm run load:scale    # The time of searching an account full of documents
 ```
 
 Whole stack, from the repository root. Compose refuses to start until `POSTGRES_PASSWORD` is set in `.env`.
@@ -48,6 +51,7 @@ Whole stack, from the repository root. Compose refuses to start until `POSTGRES_
 cp .env.example .env
 docker compose up --build    # Everything, at http://localhost:4200
 docker compose up -d db ollama ollama-models   # Only what local development needs
+docker compose --profile observability up -d   # Everything, plus Prometheus and Grafana at http://localhost:3000
 docker compose down          # Stops everything and keeps the data
 docker compose down -v       # Also DELETES the database, the uploaded files and the ~8 GB of models
 ```
@@ -74,6 +78,8 @@ docker compose down -v       # Also DELETES the database, the uploaded files and
 
 **Conversations.** `chat.ConversationService` asks `rag.AnswerService` and then stores the question and answer together, outside any transaction during the model's work, so a failed question leaves nothing ([ADR 0008](docs/adr/0008-conversations-and-follow-up-questions.md)). With earlier turns, `rag.QuestionRewriter` first makes the question stand alone, and the result is stored as `interpretedQuestion` and shown as "Searched for". A citation points at its passage through a foreign key instead of copying the text, so deleting a document clears `document_id` and removes the excerpt while the answer stays. Anything stored from a request or the model goes through `PgText.clean`.
 
+**Observability.** Stages are measured with Micrometer's Observation API, in `AnswerService` and `DocumentProcessor`, and the `stage` method in each is the way to add one ([ADR 0011](docs/adr/0011-observability-and-load-tests.md)). Tags must hold only fixed words, never ids, names or text, and they must be the same on every use of a metric, or Prometheus drops the meter, which is why `outcome` starts with a default. `/actuator/prometheus` is public on the backend's port and not forwarded by the frontend. Prometheus and Grafana are in `observability/compose.yaml` under a profile, included by both Compose files. Spring Boot turns off exporting metrics in tests, so `application-default.yml` turns it back on.
+
 **Status versus health.** `GET /api/system/status` always answers 200 with the real state in its body, and the UI displays it. `/actuator/health/readiness` answers 503 when the database, pgvector or the storage is down, and deliberately ignores the AI service, because accounts and documents work without it. Liveness does not depend on any of them. A new hard dependency must be added to the readiness group in `application.yml`, because a health indicator alone does not affect readiness.
 
 **Database.** Schema changes go through Flyway migrations in `backend/src/main/resources/db/migration`. Relational data, sessions and embeddings share one PostgreSQL database ([ADR 0003](docs/adr/0003-pgvector-for-vector-storage.md)). The vector column has dimension 1024 for `bge-m3`, so an embedding model of another dimension needs a new migration and reprocessing. Text must not contain NUL characters or unpaired surrogates, which `PgText.clean` removes.
@@ -94,6 +100,7 @@ docker compose down -v       # Also DELETES the database, the uploaded files and
 - Frontend specs run on Vitest with jsdom. They find elements through `data-testid` and fake the backend with `HttpTestingController`. `ask.spec.ts` uses `RouterTestingHarness` with the real `askUrl` matcher, because the page depends on route reuse. That fake does not exercise what a browser really sends, so check request bodies and headers explicitly, and run authentication changes in a real browser. A `URLSearchParams` login body passed every spec while the browser sent it as JSON.
 - Browser tests in `e2e/tests` use Playwright with the installed Edge, against the stack in `e2e/compose.yaml`, which has its own project name, volumes and ports, so stopping services and deleting everything never reaches real data ([ADR 0009](docs/adr/0009-browser-tests-on-an-isolated-stack.md)). `e2e/fake-ollama/server.mjs` replaces Ollama, and `fakeModel()` in `support/app.ts` makes it slow, broken or reply with chosen text. The stack sets low limits through environment variables, so a test of a limit takes seconds. Tests fail if the page throws or the CSP blocks something, so import `test` from `support/app`, not from Playwright. Use `whileStopped` to stop a service, because it always brings it back.
 - `e2e/real` runs against the real models and must be run after changing a prompt, a model or the search. Its checks only ask for what a correct answer must contain, because models vary between runs.
+- `e2e/load` holds the k6 script and `run.ts`, which starts the stack, samples resources and reports. k6 clears cookies between iterations unless told otherwise, has a 60-second request timeout of its own, and only reports a group of requests that has a threshold. A load test that fails all its requests in 5 ms looks fast, so keep its thresholds on failures. Results in `docs/performance.md` are written by hand from real runs, with their environment and method, and are never estimated without saying so.
 - No test may call a paid API.
 - Mockito's self-attach warning and PDFBox's fallback font warning are harmless.
 
@@ -108,7 +115,8 @@ docker compose down -v       # Also DELETES the database, the uploaded files and
 - The question length in `QuestionRequest` in `ConversationController` and `MAX_QUESTION_LENGTH` in `ask.ts`.
 - The drawing and colours in `core/ui/brand-mark.ts` and `frontend/public/favicon.svg`, and `--color-ink` in `styles.scss` with `theme-color` in `index.html`.
 - The captures in `frontend/public/showcase` with the screens they show, retaken when those change visibly.
-- The measured times on the home page and the hardware table in the README.
+- The measured times on the home page and the hardware table in the README, and the results in `docs/performance.md` with the summary under "Performance" in the README.
+- The metric names in `observability/grafana/dashboards/docchat.json` with those the backend exposes. `e2e/tests/observability.spec.ts` fails when they differ.
 - Backend response records and the TypeScript models in `frontend/src/app/core`, mirrored by hand with no code generation. `DocumentFailureReason` also needs a message in `FAILURE_MESSAGES` in `documents.ts`.
 
 ## Working rules

@@ -5,8 +5,9 @@
     "moduleResolution": "bundler",
     "strict": true,
     "noEmit": true,
+    "allowImportingTsExtensions": true,
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "include": ["*.ts", "support", "tests", "real"]
+  "include": ["*.ts", "support", "tests", "real", "load/*.ts"]
 }

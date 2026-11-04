@@ -52,6 +52,7 @@ class SessionConfig {
         return path.equals("/api/system/status")
                 || path.equals("/actuator/health")
                 || path.startsWith("/actuator/health/")
-                || path.equals("/actuator/info");
+                || path.equals("/actuator/info")
+                || path.equals("/actuator/prometheus");
     }
 }

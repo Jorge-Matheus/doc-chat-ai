@@ -19,9 +19,13 @@ import com.docchat.common.web.ApiException;
 import com.docchat.rag.AnswerService.Answer;
 import com.docchat.rag.AnswerService.Citation;
 import com.docchat.rag.AnswerService.PreviousTurn;
+import io.micrometer.core.instrument.observation.DefaultMeterObservationHandler;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import io.micrometer.observation.ObservationRegistry;
 import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -29,8 +33,10 @@ import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.mockito.ArgumentMatchers;
 import org.springframework.core.task.AsyncTaskExecutor;
 import org.springframework.core.task.SimpleAsyncTaskExecutor;
+import org.springframework.core.task.TaskRejectedException;
 import org.springframework.http.HttpStatus;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
@@ -44,12 +50,97 @@ class AnswerServiceTest {
     private final TextGenerator generator = mock(TextGenerator.class);
     private final QuestionRewriter rewriter = mock(QuestionRewriter.class);
     private final ChunkSearchRepository search = mock(ChunkSearchRepository.class);
+    private final SimpleMeterRegistry metrics = new SimpleMeterRegistry();
+    private final ObservationRegistry observations = ObservationRegistry.create();
     private final AnswerService service = serviceWith(new SimpleAsyncTaskExecutor(), Duration.ofSeconds(30));
 
     @BeforeEach
     void setUp() {
+        observations.observationConfig().observationHandler(new DefaultMeterObservationHandler(metrics));
         when(embedder.embed("question")).thenReturn(VECTOR);
         when(rewriter.rewrite(eq("question"), any())).thenReturn("question");
+    }
+
+    @Test
+    void measuresEachStageAndThatTheQuestionWasAnswered() {
+        givenChunks(chunk("a.pdf", 1, 0, "Passage", 0.9));
+        when(generator.generate(anyString(), anyString())).thenReturn("Yes [1].");
+
+        ask();
+
+        assertThat(questionCount("answered")).isEqualTo(1);
+        assertThat(stageCount("embedding", "none")).isEqualTo(1);
+        assertThat(stageCount("search", "none")).isEqualTo(1);
+        assertThat(stageCount("generation", "none")).isEqualTo(1);
+    }
+
+    /** It takes no time without earlier turns, so counting those would hide how long it really takes. */
+    @Test
+    void measuresRewritingOnlyWhenThereIsSomethingToRewrite() {
+        givenChunks();
+        ask();
+        assertThat(metrics.find("docchat.question.stage").tag("stage", "rewrite").timer()).isNull();
+
+        service.answer(OWNER, "question", List.of(), List.of(new PreviousTurn("Earlier?", "Yes.")));
+
+        assertThat(stageCount("rewrite", "none")).isEqualTo(1);
+    }
+
+    @Test
+    void measuresAQuestionTheDocumentsCouldNotAnswer() {
+        givenChunks();
+
+        ask();
+
+        assertThat(questionCount("not_found")).isEqualTo(1);
+        assertThat(metrics.find("docchat.question.stage").tag("stage", "generation").timer()).isNull();
+    }
+
+    @Test
+    void measuresAFailureAndTheStageWhereItHappened() {
+        givenChunks(chunk("a.pdf", 1, 0, "Passage", 0.9));
+        when(generator.generate(anyString(), anyString()))
+                .thenThrow(new AiUnavailableException(new IllegalStateException("down")));
+
+        assertThatThrownBy(this::ask).isInstanceOf(AiUnavailableException.class);
+
+        assertThat(questionCount("failed")).isEqualTo(1);
+        assertThat(stageCount("generation", "AiUnavailableException")).isEqualTo(1);
+    }
+
+    @Test
+    void measuresAQuestionPastTheTimeLimit() {
+        givenChunks(chunk("a.pdf", 1, 0, "Passage", 0.9));
+        when(generator.generate(anyString(), anyString())).thenAnswer(call -> {
+            Thread.sleep(Duration.ofMinutes(1));
+            return "Too late [1].";
+        });
+        AnswerService limited = serviceWith(new SimpleAsyncTaskExecutor(), Duration.ofMillis(100));
+
+        assertThatThrownBy(() -> limited.answer(OWNER, "question", List.of(), List.of()))
+                .isInstanceOf(AiUnavailableException.class);
+
+        assertThat(questionCount("timed_out")).isEqualTo(1);
+    }
+
+    @Test
+    void measuresAQuestionRefusedForBeingBeyondTheLimit() {
+        AsyncTaskExecutor full = mock(AsyncTaskExecutor.class);
+        when(full.submit(ArgumentMatchers.<Callable<Answer>>any())).thenThrow(new TaskRejectedException("full"));
+        AnswerService limited = serviceWith(full, Duration.ofSeconds(30));
+
+        assertThatThrownBy(() -> limited.answer(OWNER, "question", List.of(), List.of()))
+                .isInstanceOf(ApiException.class);
+
+        assertThat(questionCount("refused")).isEqualTo(1);
+    }
+
+    private long questionCount(String outcome) {
+        return metrics.get("docchat.question").tag("outcome", outcome).timer().count();
+    }
+
+    private long stageCount(String stage, String error) {
+        return metrics.get("docchat.question.stage").tag("stage", stage).tag("error", error).timer().count();
     }
 
     @Test
@@ -230,7 +321,13 @@ class AnswerServiceTest {
 
     private AnswerService serviceWith(AsyncTaskExecutor executor, Duration timeLimit) {
         return new AnswerService(
-                embedder, generator, rewriter, search, new RagProperties(3, MIN_SIMILARITY, 4, timeLimit), executor);
+                embedder,
+                generator,
+                rewriter,
+                search,
+                new RagProperties(3, MIN_SIMILARITY, 4, timeLimit),
+                executor,
+                observations);
     }
 
     private Answer ask() {

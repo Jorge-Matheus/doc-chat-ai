@@ -65,7 +65,7 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: health,info,prometheus
   endpoint:
     health:
       probes:
@@ -73,6 +73,18 @@ management:
       group:
         readiness:
           include: readinessState,db,pgvector,storage
+  metrics:
+    distribution:
+      # Lets Prometheus calculate p50, p95 and p99, in buckets between these durations.
+      percentiles-histogram:
+        docchat: true
+        http.server.requests: true
+      minimum-expected-value:
+        docchat: 1ms
+        http.server.requests: 1ms
+      maximum-expected-value:
+        docchat: 30m
+        http.server.requests: 3m
 
 springdoc:
   show-login-endpoint: true
@@ -88,6 +100,8 @@ docchat:
   documents:
     # Room for 200 files of the largest size accepted.
     storage-per-user: 5GB
+    # How often to count the documents in each state, for the metrics.
+    metrics-interval: PT15S
   ingestion:
     workers: 2
     queue-capacity: 100
