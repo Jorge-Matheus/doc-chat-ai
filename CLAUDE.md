@@ -127,3 +127,4 @@ docker compose down -v       # Also DELETES the database, the uploaded files and
 - Code, documentation and UI text are in English.
 - Consult the user before important decisions: base versions, deviations from the phase plan, machine installs, and anything else with a lasting effect. Significant decisions are recorded as ADRs in `docs/adr/`.
 - Never report something as verified unless it was executed. If a check could not be run, say so and record it in the README's "Project status" section.
+- Before closing a phase, run the tests from a clean `git clone`. Maven and Docker read the working folder, so passing there does not show that everything was committed. A `.gitignore` rule once kept a whole Java package out of every commit from Phase 2 to Phase 6, with every test passing. `git ls-files --others --ignored --exclude-standard` lists what Git is ignoring.

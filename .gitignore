@@ -3,9 +3,11 @@
 .env.*
 !.env.example
 
-# User data
-storage/
-uploads/
+# User data. Tied to these folders, because a plain "storage/" also matches the Java package of that name.
+/storage/
+/uploads/
+/backend/storage/
+/backend/uploads/
 *.pdf
 !**/src/test/resources/**/*.pdf
 
