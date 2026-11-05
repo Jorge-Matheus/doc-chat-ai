@@ -42,7 +42,9 @@ class DocumentController {
         this.documentService = documentService;
     }
 
+    // The ResponseEntity sets the same status. This annotation is what the OpenAPI document reads.
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @ResponseStatus(HttpStatus.ACCEPTED)
     @Operation(
             summary = "Upload a PDF",
             description = "Answers 202 while the text is extracted in the background. Poll the document"

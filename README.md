@@ -4,6 +4,10 @@ DocChat AI is a full-stack platform for asking questions about PDF documents in 
 
 It runs only on your own machine. Your documents never leave it: there is no cloud service and no deployment, and it uses only free software.
 
+![An answer that cites the page of a contract it came from](frontend/public/showcase/ask.webp)
+
+**Contents:** [Install and run, step by step](#install-and-run-step-by-step) · [Use it, step by step](#use-it-step-by-step) · [Project status](#project-status) · [Architecture](#architecture) · [Tech stack](#tech-stack) · [Development](#development) · [API](#api) · [Tests](#tests) · [Observability](#observability) · [Performance](#performance) · [Security](#security) · [Troubleshooting](#troubleshooting) · [Known limitations](#known-limitations) · [Roadmap](#roadmap)
+
 ## The problem
 
 Finding a specific answer in a long document, such as a 40-page contract, means reading it or searching for exact words. Generic AI chat can answer faster, but its answers are hard to trust without knowing where they came from. DocChat AI answers only from the user's own documents, cites the pages it used, and says so when the documents do not contain the answer.
@@ -19,15 +23,147 @@ Finding a specific answer in a long document, such as a 40-page contract, means 
 - **Recovers from failures.** Documents continue after a restart or a database outage, and one that failed because the AI service was down can be tried again.
 - **Measures itself.** Optional dashboards show the time of each stage, errors and resources.
 
-| Asking a question | Following up |
-|---|---|
-| ![An answer citing the page of a contract](frontend/public/showcase/ask.webp) | ![A follow-up question and what was searched for](frontend/public/showcase/follow-up.webp) |
+## Install and run, step by step
 
-| Checking a source | Your documents |
-|---|---|
-| ![The text of a page with the cited passage marked](frontend/public/showcase/source.webp) | ![The list of documents with their state](frontend/public/showcase/documents.webp) |
+The application was developed and measured on Windows 11 with Docker Desktop. Everything runs in Docker, so nothing else has to be installed to use it.
 
-These are captures of the real application, using sample documents and real answers from the local models.
+### 1. Check what you need
+
+| You need | What for |
+|---|---|
+| [Git](https://git-scm.com/) | Downloading the code |
+| [Docker Desktop](https://www.docker.com/products/docker-desktop/), or on Linux Docker Engine with Compose and the NVIDIA Container Toolkit | Running the database, the AI models, the backend and the frontend |
+| An NVIDIA GPU with a current driver | Running the AI models, which use about 6 GB of its memory |
+| About 20 GB of free disk | The images and models take 17.5 GB, mostly the Ollama image (8.5 GB) and the models (7.7 GB), and building them needs some more |
+| RAM | It was measured on a computer with 16 GB, giving Docker 8 GB, and RAM was tighter than GPU memory |
+
+Check that Docker can reach the GPU. This should print a table with the name of your GPU:
+
+```bash
+docker run --rm --gpus all ubuntu:24.04 nvidia-smi
+```
+
+If it fails, see [Troubleshooting](#troubleshooting).
+
+### 2. Get the code
+
+```bash
+git clone https://github.com/Jorge-Matheus/doc-chat-ai.git
+cd doc-chat-ai
+```
+
+### 3. Choose a database password
+
+Copy the example configuration. The same command works in PowerShell:
+
+```bash
+cp .env.example .env
+```
+
+Open `.env` in a text editor and fill in `POSTGRES_PASSWORD`. It has no default on purpose, and Compose refuses to start without it. You never type it again, because the application reads it from this file. To generate one, run `openssl rand -hex 24` in Git Bash, which comes with Git for Windows, or in a terminal on Linux or macOS:
+
+```dotenv
+POSTGRES_PASSWORD=the-generated-password
+```
+
+Git ignores `.env`, so the password is never committed. The database is created with this password on the first start and keeps it, so changing it later in `.env` alone makes the backend fail to connect.
+
+### 4. Start the application
+
+With Docker running, from the `doc-chat-ai` folder:
+
+```bash
+docker compose up --build
+```
+
+The first start takes a while, because it:
+
+1. builds the images of the backend and the frontend;
+2. starts PostgreSQL and Ollama;
+3. downloads the two AI models, about 8 GB, which happens only once;
+4. starts the backend once the database is healthy and the models are there, and the frontend once the backend is ready.
+
+The logs of every service appear in the terminal. Pressing Ctrl+C there stops the application. To run it in the background instead, add `-d`.
+
+### 5. Open it
+
+Open <http://localhost:4200>:
+
+![The home page of DocChat AI, with buttons to create an account or sign in](docs/images/home.webp)
+
+Further down the home page, **System status** shows whether each part is working. All four should be **Up**:
+
+![System status, with the backend, the database, the pgvector extension and the AI models all up](docs/images/system-status.webp)
+
+If **AI models** is down, Ollama is stopped or a model is missing. See [Troubleshooting](#troubleshooting).
+
+### 6. Stop it and start it again
+
+| To | Run |
+|---|---|
+| Stop, keeping everything | Ctrl+C in the terminal, or `docker compose stop` if it runs in the background |
+| Start again | `docker compose up`, which is quick from the second time on, because the models are kept |
+| Start after updating the code with `git pull` | `docker compose up --build` |
+| Remove the containers and keep your data | `docker compose down` |
+| Delete everything, including accounts, documents and models | `docker compose down -v`, which cannot be undone |
+
+### What to expect from the hardware
+
+Measured on an RTX 3060 with 12 GB and 16 GB of RAM, with the whole stack and desktop applications running:
+
+| Measure | Result |
+|---|---|
+| Layers on the GPU | 100% of both models |
+| Peak GPU memory | About 8.7 GB of 12 GB, including what the desktop uses |
+| Typical answer | 1 to 3 seconds, and follow-up questions take about the same |
+| First answer after the model is unloaded | About 20 seconds, and 124 seconds in the worst case seen, with under 2 GB of RAM free |
+| Processing a PDF of 500 pages | 110 seconds |
+
+Ollama unloads a model after five idle minutes, which frees its GPU memory and makes the next answer slower. RAM is tighter than GPU memory on such a machine, so closing other applications helps most when loading is slow.
+
+## Use it, step by step
+
+The captures are of the real application, with sample documents written for them. Steps 1 and 2 were captured on the stack of the browser tests, and the answers in steps 3 to 5 are real answers from the local models.
+
+### 1. Create an account
+
+Choose **Create account** on the home page, and enter an email and a password of at least 12 characters. The account exists only on this computer: no email is sent, and the address is not checked.
+
+![The form to create an account, with an email and a password](docs/images/create-account.webp)
+
+You are then signed in and taken to your documents. A session ends after 30 minutes without activity.
+
+### 2. Upload a PDF
+
+Choose **Upload PDF** and pick a file of up to 25 MB, with text you can select. A scanned PDF has only images of text, so it cannot be used.
+
+![The list of documents, with one being processed and four ready](docs/images/upload.webp)
+
+The file is read and indexed on this computer, page by page. It shows **Processing** until it can be asked about, and then **Ready**, and the list updates by itself. A document that cannot be used shows the reason, such as a password or no text, and **Try again** appears when the cause was not the file, such as the AI service being stopped. **Open** shows the original PDF, and **Delete** removes it with its text.
+
+### 3. Ask a question
+
+Choose **Ask** and write a question in your own words, even in a different language from the documents. It searches all your ready documents, or only those chosen in **Search in**.
+
+![An answer with a numbered citation, and the file, page and passage it came from](frontend/public/showcase/ask.webp)
+
+Each number in brackets is a citation. Under **Sources**, each one shows the file, the page and the start of the passage the answer used. When your documents do not contain the answer, it says so instead of guessing.
+
+### 4. Ask a follow-up
+
+In the same conversation, a question can depend on the earlier ones, as "And the penalty?" does here. Before searching, the model rewrites it so that it stands alone, and **Searched for** shows the result, so a wrong interpretation is visible.
+
+![A follow-up question, what was searched for, and its answer with a citation](frontend/public/showcase/follow-up.webp)
+
+### 5. Check the source
+
+**View page** opens the text of the cited page with the passage marked. **Previous** and **Next** move through the document, and **Open original PDF** shows the file itself at that page.
+
+![The text of page 3 of the agreement, with the cited passage marked in yellow](frontend/public/showcase/source.webp)
+
+### 6. Come back later
+
+Your conversations are listed on the left of **Ask**, most recently active first, and stay until you delete them. Deleting a document keeps the conversations that cited it: their answers stay, and their citations say that the document was deleted.
 
 ## Project status
 
@@ -203,60 +339,36 @@ Deleting a document removes its pages and passages. Its citations stay with `doc
 | Micrometer, Prometheus, Grafana | Managed by Spring Boot, 3.15, 13.0 | Metrics of each stage, with optional dashboards. See [ADR 0011](docs/adr/0011-observability-and-load-tests.md). |
 | k6 | 2.3 | Load tests in a container, so nothing has to be installed. |
 
-## Getting started
+## Development
 
-Requires Docker with Compose and an NVIDIA GPU that Docker can reach. The models use about 6 GB of GPU memory.
-
-Copy the example configuration first, then set `POSTGRES_PASSWORD` in `.env`. Compose refuses to start without it:
-
-```bash
-cp .env.example .env
-```
-
-### Run everything in Docker
-
-```bash
-docker compose up --build
-```
-
-The first run downloads about 8 GB of models, and the backend starts after that. Then open <http://localhost:4200>, create an account, upload a PDF and ask about it. The home page shows the live status of the backend, the database and the AI models.
-
-### Run for development
-
-Also requires JDK 21 or newer and Node.js 26 (or another [version supported by Angular 22](https://angular.dev/reference/versions)).
+To change the code, run the backend and the frontend on your machine, and only the database and Ollama in Docker. This also requires JDK 21 or newer and Node.js 26 (or another [version supported by Angular 22](https://angular.dev/reference/versions)), and the `.env` from [step 3](#3-choose-a-database-password).
 
 ```bash
 docker compose up -d db ollama ollama-models
+```
 
+In one terminal, start the backend:
+
+```bash
 cd backend
 ./mvnw spring-boot:run -Dspring-boot.run.profiles=dev
+```
 
+In another, start the frontend:
+
+```bash
 cd frontend
 npm ci
 npm start
 ```
 
-Open <http://localhost:4200>. `ng serve` proxies the API to the backend on port 8080. Uploaded files go to `backend/storage`, which Git ignores.
+Open <http://localhost:4200>. `ng serve` proxies the API to the backend on port 8080, and reloads the page when the frontend's code changes. Uploaded files go to `backend/storage`, which Git ignores.
 
 On Windows, use `mvnw.cmd` instead of `./mvnw`. In Windows PowerShell, also quote the property, because PowerShell splits an unquoted argument at the dot and Maven fails with `Unknown lifecycle phase`:
 
 ```powershell
 .\mvnw.cmd spring-boot:run '-Dspring-boot.run.profiles=dev'
 ```
-
-### What to expect from the hardware
-
-Measured on an RTX 3060 with 12 GB and 16 GB of RAM, with the whole stack and desktop applications running:
-
-| Measure | Result |
-|---|---|
-| Layers on the GPU | 100% of both models |
-| Peak GPU memory | About 8.7 GB of 12 GB, including what the desktop uses |
-| Typical answer | 1 to 3 seconds, and follow-up questions take about the same |
-| First answer after the model is unloaded | About 20 seconds, and 124 seconds in the worst case seen, with under 2 GB of RAM free |
-| Processing a PDF of 500 pages | 110 seconds |
-
-Ollama unloads a model after five idle minutes, which frees its GPU memory and makes the next answer slower. RAM is tighter than GPU memory on such a machine, so closing other applications helps most when loading is slow.
 
 ### Environment variables
 
@@ -275,7 +387,19 @@ Ollama unloads a model after five idle minutes, which frees its GPU memory and m
 
 ## API
 
-The API is documented with OpenAPI at `/v3/api-docs`, and Swagger UI is at `/swagger-ui/index.html`.
+The API is documented with OpenAPI at `/v3/api-docs`. With the application running, Swagger UI at <http://localhost:4200/swagger-ui/index.html> lists every endpoint, grouped by what it works on:
+
+![Swagger UI listing the endpoints of accounts, documents, the system and conversations](docs/images/api-endpoints.webp)
+
+Opening an endpoint shows what it takes and what it returns. Starting a conversation, for example, takes a question and optionally the documents to search, and answers 201 with the conversation and its first turn, whose citations carry the file and page:
+
+![The endpoint that starts a conversation, with its request body and its 201 response](docs/images/api-ask.webp)
+
+**Try it out** calls the running application from the page. Here it asks for the state of the system, and shows the real response with its headers, including the `x-correlation-id` that also appears in the logs. This capture was taken on the stack of the browser tests, which uses port 4300 instead of 4200:
+
+![A real call to the system status endpoint from Swagger UI, answered with 200](docs/images/api-status-call.webp)
+
+The endpoints:
 
 | Endpoint | Description |
 |---|---|
@@ -481,7 +605,7 @@ This version is meant to run on your own machine and **must not be exposed publi
 - A file left on the disk by a crash between storing it and recording it, or that could not be deleted, stays there. No one can reach it, but it takes up space.
 - Searching compares a question with all the passages of an account, so it gets slower as documents accumulate. It took about 0.6 s with 50,000 passages. See [docs/performance.md](docs/performance.md).
 - Browser tests only run in Microsoft Edge.
-- Swagger UI's "Try it out" does not send the CSRF token, so only read requests work there.
+- Swagger UI's "Try it out" does not send the CSRF token, so only read requests work there. It also describes signing in as JSON, while sign-in takes a form, as the [API](#api) table says.
 - Mockito prints a self-attach warning during backend tests, and PDFBox logs a fallback font warning for PDFs using standard fonts. Neither affects results.
 
 ## Roadmap

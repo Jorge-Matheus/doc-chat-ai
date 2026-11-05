@@ -37,7 +37,9 @@ class ConversationController {
         this.conversationService = conversationService;
     }
 
+    // The ResponseEntity sets the same status. This annotation is what the OpenAPI document reads.
     @PostMapping
+    @ResponseStatus(HttpStatus.CREATED)
     @Operation(
             summary = "Start a conversation with its first question",
             description = "A turn has \"answered\": false when the documents do not contain the answer."

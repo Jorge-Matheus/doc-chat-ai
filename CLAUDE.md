@@ -117,7 +117,7 @@ docker compose down -v       # Also DELETES the database, the uploaded files and
 - The rules of `FakeEmbeddingModel` and `FakeChatModel` in the backend's tests and `e2e/fake-ollama/server.mjs`, and what that server answers with how the backend calls Ollama.
 - The question length in `QuestionRequest` in `ConversationController` and `MAX_QUESTION_LENGTH` in `ask.ts`.
 - The drawing and colours in `core/ui/brand-mark.ts` and `frontend/public/favicon.svg`, and `--color-ink` in `styles.scss` with `theme-color` in `index.html`.
-- The captures in `frontend/public/showcase` with the screens they show, retaken when those change visibly.
+- The captures in `frontend/public/showcase` and `docs/images` with the screens they show, retaken when those change visibly. The README's step-by-step guide uses both.
 - The measured times on the home page and the hardware table in the README, and the results in `docs/performance.md` with the summary under "Performance" in the README.
 - The metric names in `observability/grafana/dashboards/docchat.json` with those the backend exposes. `e2e/tests/observability.spec.ts` fails when they differ.
 - Backend response records and the TypeScript models in `frontend/src/app/core`, mirrored by hand with no code generation. `DocumentFailureReason` also needs a message in `FAILURE_MESSAGES` in `documents.ts`.

@@ -80,7 +80,12 @@ class ApplicationWithoutDatabaseTest {
                 .andExpect(jsonPath("$.paths['/api/auth/login'].post").exists())
                 .andExpect(jsonPath("$.paths['/api/documents'].post").exists())
                 .andExpect(jsonPath("$.paths['/api/conversations'].post").exists())
-                .andExpect(jsonPath("$.paths['/api/documents/{id}/pages/{pageNumber}'].get").exists());
+                .andExpect(jsonPath("$.paths['/api/documents/{id}/pages/{pageNumber}'].get").exists())
+                // Relative, or Swagger UI behind the frontend's proxy calls port 80 instead of its own.
+                .andExpect(jsonPath("$.servers[0].url").value("/"))
+                .andExpect(jsonPath("$.paths['/api/documents'].post.responses['202']").exists())
+                .andExpect(jsonPath("$.paths['/api/conversations'].post.responses['201']").exists())
+                .andExpect(jsonPath("$.paths['/api/conversations'].post.responses['200']").doesNotExist());
         mockMvc.perform(get("/swagger-ui/index.html"))
                 .andExpect(status().isOk())
                 .andExpect(content().string(containsString("swagger")));
