@@ -40,7 +40,7 @@ These are captures of the real application, using sample documents and real answ
 | 5. Tests and robustness | End-to-end and security tests, failure recovery | Complete |
 | 6. Performance and documentation | Observability, load tests, final documentation | Complete |
 
-There is no continuous integration and no deployment of any kind, by decision, because the project runs only on its owner's machine.
+There is no continuous integration and no deployment of any kind, by decision, because the application is meant to run only on your own machine.
 
 **How it was checked:** the automated tests listed under [Tests](#tests), which include the complete flow in a real browser, stopping the database, the backend and the AI service, and restarting the backend during processing. They run in headless Microsoft Edge on the developer's machine, and nothing runs them automatically on a server. Separate commands run the same browser against the real models. A PDF of 500 pages with the real models, opening the original PDF at the cited page, and upgrading a database that already had documents were each checked once by hand and are not repeated automatically. The quality of answers was measured on a few short documents written for the tests, not on real ones.
 
@@ -207,7 +207,7 @@ Deleting a document removes its pages and passages. Its citations stay with `doc
 
 Requires Docker with Compose and an NVIDIA GPU that Docker can reach. The models use about 6 GB of GPU memory.
 
-Copy the example configuration first, then change `POSTGRES_PASSWORD` in `.env`:
+Copy the example configuration first, then set `POSTGRES_PASSWORD` in `.env`. Compose refuses to start without it:
 
 ```bash
 cp .env.example .env
@@ -509,3 +509,7 @@ None of this exists yet, and it is listed in no particular order.
 - [ADR 0009: Browser tests on an isolated stack](docs/adr/0009-browser-tests-on-an-isolated-stack.md)
 - [ADR 0010: Background document processing inside the application](docs/adr/0010-background-document-processing.md)
 - [ADR 0011: Observability and load tests](docs/adr/0011-observability-and-load-tests.md)
+
+## License
+
+[MIT](LICENSE). The AI models are not part of this repository: Ollama downloads them on the first run, and each has its own license.
